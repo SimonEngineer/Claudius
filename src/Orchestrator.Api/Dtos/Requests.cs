@@ -4,8 +4,8 @@ public record CreateProjectRequest(
     string Name,
     string RepoPath,
     string? GitRemote,
-    string LocalModel,
-    string CloudModel,
+    string WorkerModel,
+    string SupervisorModel,
     int MaxWorkerConcurrency = 1,
     int Priority = 0);
 

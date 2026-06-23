@@ -248,3 +248,9 @@ Run **LiteLLM proxy** (or a small custom Express/FastAPI shim if more control is
 1. Preferred orchestrator language: TypeScript (pairs naturally with Claude Agent SDK + a Next.js dashboard) or Python (pairs naturally with most local-model tooling)?
 2. Should the worker tier's first local-model target be Ollama specifically, or also LocalAI/vLLM from day one?
 3. Is a self-hosted single-user setup acceptable (no auth beyond an API key), or is multi-user/remote access needed from the start?
+
+**Addendum**: Question 2 is resolved — LocalAI is now supported alongside Ollama as a
+day-one local-model backend (routed through LiteLLM via `model: openai/<model-name>` +
+`api_base`), and both the supervisor and worker lanes default to LocalAI models so the
+whole pipeline runs fully offline by default. The cloud (Anthropic) entry remains
+available as an explicit opt-in per project.

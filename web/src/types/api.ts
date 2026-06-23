@@ -22,8 +22,8 @@ export interface Project {
   name: string;
   repoPath: string;
   gitRemote: string | null;
-  localModel: string;
-  cloudModel: string;
+  workerModel: string;
+  supervisorModel: string;
   maxWorkerConcurrency: number;
   priority: number;
   createdAt: string;

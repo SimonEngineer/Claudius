@@ -61,7 +61,7 @@ public class TaskRunnerJob(
 
         var project = task.Project!;
         var engine = lane == Lane.Supervisor ? EngineType.ClaudeCode : EngineType.Aider;
-        var model = lane == Lane.Supervisor ? project.CloudModel : project.LocalModel;
+        var model = lane == Lane.Supervisor ? project.SupervisorModel : project.WorkerModel;
         var timeout = lane == Lane.Supervisor ? options.Value.SupervisorRunTimeout : options.Value.WorkerRunTimeout;
 
         var run = new Run { TaskId = task.Id, Engine = engine, Model = model, Status = RunStatus.Running };

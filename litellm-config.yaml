@@ -1,19 +1,46 @@
-# LiteLLM proxy: single OpenAI/Anthropic-compatible endpoint in front of both the cloud
-# supervisor models and the local worker models. Per-provider timeouts matter here -- local
-# Ollama calls can legitimately take many minutes, cloud calls should fail fast on hangs.
+# LiteLLM proxy: single OpenAI/Anthropic-compatible endpoint in front of every model the
+# orchestrator can use, local or cloud. Per-provider timeouts matter here -- local Ollama/LocalAI
+# calls can legitimately take many minutes, cloud calls should fail fast on hangs.
+#
+# Fully local/offline setup (default): only the localai/* and ollama/* entries below are ever
+# called. The anthropic/* entry is opt-in -- it's only hit if a project's supervisorModel/
+# workerModel is explicitly set to it, and ANTHROPIC_API_KEY is otherwise unused.
 model_list:
-  - model_name: anthropic/claude-sonnet-4-6
+  # --- LocalAI (OpenAI-compatible local inference server) ---
+  # LocalAI exposes a standard OpenAI /v1/chat/completions API, so it's routed the same way as
+  # any other OpenAI-compatible backend: `model: openai/<model-name>` + an explicit api_base.
+  - model_name: localai/qwen2.5-coder
     litellm_params:
-      model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 120
+      model: openai/qwen2.5-coder
+      api_base: os.environ/LOCALAI_BASE_URL
+      api_key: "not-needed"
+      timeout: 1800
+      stream_timeout: 1800
 
+  - model_name: localai/qwen2.5-coder-32b
+    litellm_params:
+      model: openai/qwen2.5-coder-32b
+      api_base: os.environ/LOCALAI_BASE_URL
+      api_key: "not-needed"
+      timeout: 1800
+      stream_timeout: 1800
+
+  # --- Ollama ---
   - model_name: ollama/qwen2.5-coder:32b
     litellm_params:
       model: ollama/qwen2.5-coder:32b
       api_base: os.environ/OLLAMA_BASE_URL
       timeout: 1800
       stream_timeout: 1800
+
+  # --- Cloud (opt-in) ---
+  # Only used if a project explicitly sets workerModel/supervisorModel to this id. Requires a
+  # real ANTHROPIC_API_KEY; leave unset for a fully offline setup.
+  - model_name: anthropic/claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 120
 
 litellm_settings:
   drop_params: true

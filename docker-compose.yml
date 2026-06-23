@@ -16,6 +16,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # OpenAI-compatible local inference server -- runs entirely on this machine, no internet
+  # required. Drop GGUF/model configs into ./localai-models; see README for setup. Omit this
+  # service (and use only `ollama`) if you'd rather run local models that way instead.
+  localai:
+    image: localai/localai:latest-cpu
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./localai-models:/build/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/readyz"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     restart: unless-stopped
@@ -25,11 +41,17 @@ services:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # Unset by default -- fully local setups never call the anthropic/* model entry, so no key
+      # (and no internet access) is required. Set this only if you opt a project into the cloud.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      LOCALAI_BASE_URL: ${LOCALAI_BASE_URL:-http://localai:8080}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      localai:
+        condition: service_started
 
   api:
     build:

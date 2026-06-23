@@ -21,8 +21,8 @@ export interface CreateProjectInput {
   name: string;
   repoPath: string;
   gitRemote?: string;
-  localModel: string;
-  cloudModel: string;
+  workerModel: string;
+  supervisorModel: string;
   maxWorkerConcurrency?: number;
   priority?: number;
 }

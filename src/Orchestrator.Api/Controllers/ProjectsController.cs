@@ -32,8 +32,8 @@ public class ProjectsController(OrchestratorDbContext db) : ControllerBase
             Name = request.Name,
             RepoPath = request.RepoPath,
             GitRemote = request.GitRemote,
-            LocalModel = request.LocalModel,
-            CloudModel = request.CloudModel,
+            WorkerModel = request.WorkerModel,
+            SupervisorModel = request.SupervisorModel,
             MaxWorkerConcurrency = request.MaxWorkerConcurrency,
             Priority = request.Priority
         };

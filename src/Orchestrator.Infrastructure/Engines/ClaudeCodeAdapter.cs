@@ -9,9 +9,10 @@ namespace Orchestrator.Infrastructure.Engines;
 /// Supervisor-lane adapter. Drives Claude Code headlessly:
 ///   claude -p "&lt;prompt&gt;" --output-format stream-json --permission-mode plan
 /// Used for Plan (goal/task -> implementation plan + acceptance criteria) and Verify
-/// (diff/test output -> pass/fail + follow-up instruction) runs. Always backed by a
-/// real Anthropic model (configured via the LLM gateway / ANTHROPIC_BASE_URL), never
-/// the local model -- this lane is "the management layer".
+/// (diff/test output -> pass/fail + follow-up instruction) runs. Backend-agnostic: the
+/// model id (Project.SupervisorModel) is routed through the LLM gateway (ANTHROPIC_BASE_URL),
+/// which can point at Anthropic's API or, for fully offline setups, at a local model served by
+/// Ollama/LocalAI -- the adapter itself doesn't know or care which.
 /// </summary>
 public class ClaudeCodeAdapter(IProcessRunner processRunner, ILogger<ClaudeCodeAdapter> logger) : IEngineAdapter
 {

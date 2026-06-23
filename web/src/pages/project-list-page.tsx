@@ -22,12 +22,14 @@ import { Label } from "@/components/ui/label";
 import { api, type CreateProjectInput } from "@/lib/api";
 import type { Project } from "@/types/api";
 
+// Defaults assume a fully local/offline setup (LocalAI for both lanes, no API key or internet
+// required) -- swap supervisorModel for an "anthropic/..." id to opt a project into the cloud.
 const EMPTY_FORM: CreateProjectInput = {
   name: "",
   repoPath: "",
   gitRemote: "",
-  localModel: "ollama/qwen2.5-coder:32b",
-  cloudModel: "anthropic/claude-sonnet-4-6",
+  workerModel: "localai/qwen2.5-coder",
+  supervisorModel: "localai/qwen2.5-coder-32b",
   maxWorkerConcurrency: 1,
   priority: 0,
 };
@@ -50,7 +52,7 @@ export function ProjectListPage() {
   useEffect(refresh, []);
 
   const handleCreate = async () => {
-    if (!form.name || !form.repoPath || !form.localModel || !form.cloudModel) return;
+    if (!form.name || !form.repoPath || !form.workerModel || !form.supervisorModel) return;
     setSubmitting(true);
     try {
       await api.createProject(form);
@@ -107,19 +109,21 @@ export function ProjectListPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="localModel">Local model</Label>
+                  <Label htmlFor="workerModel">Worker model</Label>
                   <Input
-                    id="localModel"
-                    value={form.localModel}
-                    onChange={(e) => setForm({ ...form, localModel: e.target.value })}
+                    id="workerModel"
+                    value={form.workerModel}
+                    onChange={(e) => setForm({ ...form, workerModel: e.target.value })}
+                    placeholder="ollama/qwen2.5-coder:32b"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="cloudModel">Cloud model</Label>
+                  <Label htmlFor="supervisorModel">Supervisor model</Label>
                   <Input
-                    id="cloudModel"
-                    value={form.cloudModel}
-                    onChange={(e) => setForm({ ...form, cloudModel: e.target.value })}
+                    id="supervisorModel"
+                    value={form.supervisorModel}
+                    onChange={(e) => setForm({ ...form, supervisorModel: e.target.value })}
+                    placeholder="localai/qwen2.5-coder-32b or anthropic/claude-sonnet-4-6"
                   />
                 </div>
               </div>
@@ -175,8 +179,8 @@ export function ProjectListPage() {
                   <CardDescription className="truncate">{project.repoPath}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
-                  <span>Local: {project.localModel}</span>
-                  <span>Cloud: {project.cloudModel}</span>
+                  <span>Worker: {project.workerModel}</span>
+                  <span>Supervisor: {project.supervisorModel}</span>
                   <span>Worker concurrency: {project.maxWorkerConcurrency}</span>
                 </CardContent>
               </Card>
