@@ -77,4 +77,15 @@ public sealed class Polygon2D
         }
         return result;
     }
+
+    /// <summary>Returns a new polygon uniformly scaled about the given anchor point (not necessarily its own center).</summary>
+    public Polygon2D Scale(float scale, Vector2 anchor)
+    {
+        var result = new Polygon2D();
+        foreach (var contour in Contours)
+        {
+            result.AddContour(contour.Points.Select(p => anchor + (p - anchor) * scale));
+        }
+        return result;
+    }
 }

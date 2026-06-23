@@ -32,6 +32,7 @@ public sealed class ModelGenerationService
         var rawTextOutline = _glyphOutlineProvider.GetTextOutline(request.Text, request.FontFamilyOrPath, NominalTextSizeMm);
         var fittedTextOutline = rawTextOutline.FitToSize(availableWidth, availableHeight);
         var alignedTextOutline = AlignWithinPlate(fittedTextOutline, request, availableWidth, availableHeight);
+        alignedTextOutline = EnsureWithinPlate(fittedTextOutline, alignedTextOutline, plateOutline, request, availableWidth, availableHeight);
 
         float textBottom = request.PlateThicknessMm - request.OverlapEpsilonMm;
         float textTop = textBottom + request.TextDepthMm;
@@ -71,6 +72,44 @@ public sealed class ModelGenerationService
         };
 
         return textOutline.Translate(marginCenterOffset + new Vector2(alignX, alignY));
+    }
+
+    /// <summary>
+    /// Guarantees every vertex of the text outline falls within the plate's actual
+    /// silhouette (not just its bounding box) -- this app's purpose is 3D printing, so
+    /// text poking outside a curved/pointed plate edge (Heart, Star, Oval, Plaque,
+    /// CustomSvg) is a correctness bug, not cosmetic. If the already-aligned text fails
+    /// containment, binary-searches a uniform shrink of the pre-alignment (origin-centered)
+    /// outline, re-running alignment at each candidate scale so the result keeps hugging its
+    /// chosen edge instead of leaving an inconsistent gap.
+    /// </summary>
+    private static Polygon2D EnsureWithinPlate(
+        Polygon2D fittedTextOutline, Polygon2D alignedTextOutline, Polygon2D plateOutline,
+        TagGenerationRequest request, float availableWidth, float availableHeight)
+    {
+        if (IsFullyInside(alignedTextOutline, plateOutline)) return alignedTextOutline;
+
+        float lo = 0f, hi = 1f;
+        for (int i = 0; i < 25; i++)
+        {
+            float mid = (lo + hi) / 2f;
+            var candidate = AlignWithinPlate(fittedTextOutline.Scale(mid, Vector2.Zero), request, availableWidth, availableHeight);
+            if (IsFullyInside(candidate, plateOutline)) lo = mid; else hi = mid;
+        }
+
+        return AlignWithinPlate(fittedTextOutline.Scale(lo, Vector2.Zero), request, availableWidth, availableHeight);
+    }
+
+    private static bool IsFullyInside(Polygon2D textOutline, Polygon2D plateOutline)
+    {
+        foreach (var contour in textOutline.Contours)
+        {
+            foreach (var point in contour.Points)
+            {
+                if (!PointInPolygon.IsInside(plateOutline, point)) return false;
+            }
+        }
+        return true;
     }
 
     private static Polygon2D GetPlateOutline(TagGenerationRequest request)
