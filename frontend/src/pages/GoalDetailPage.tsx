@@ -1,0 +1,215 @@
+import { useState } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { GoalsApi } from '@/api/resources'
+import { EntityType, GoalKind, GoalFieldType } from '@/types'
+import type { GoalItem } from '@/types'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
+} from '@/components/ui/dialog'
+import { TagPicker } from '@/components/TagPicker'
+import { MediaGallery } from '@/components/MediaGallery'
+import { LocationMap } from '@/components/LocationMap'
+import { ArrowLeft, Plus } from 'lucide-react'
+
+export function GoalDetailPage() {
+  const { id = '' } = useParams()
+  const qc = useQueryClient()
+  const [addOpen, setAddOpen] = useState(false)
+  const [itemDraft, setItemDraft] = useState<Record<string, string>>({})
+  const [activeItemId, setActiveItemId] = useState<string | null>(null)
+
+  const { data: goal } = useQuery({ queryKey: ['goal', id], queryFn: () => GoalsApi.get(id) })
+  const { data: items = [] } = useQuery({ queryKey: ['goal', id, 'items'], queryFn: () => GoalsApi.items(id) })
+
+  const addItem = useMutation({
+    mutationFn: () => {
+      const { name, lat, lng, ...rest } = itemDraft
+      return GoalsApi.addItem(id, {
+        name: name ?? '',
+        lat: lat ? parseFloat(lat) : null,
+        lng: lng ? parseFloat(lng) : null,
+        fieldValues: Object.entries(rest).map(([fid, value]) => ({ goalFieldDefinitionId: fid, value })),
+      })
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', id, 'items'] }); setAddOpen(false); setItemDraft({}) },
+  })
+
+  const toggleComplete = useMutation({
+    mutationFn: ({ itemId, completed }: { itemId: string; completed: boolean }) => GoalsApi.completeItem(itemId, completed),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['goal', id, 'items'] }),
+  })
+
+  if (!goal) return null
+
+  const pins = items.filter((i) => i.lat != null && i.lng != null).map((i) => ({ id: i.id, lat: i.lat!, lng: i.lng!, label: i.name }))
+  const activeItem = items.find((i) => i.id === activeItemId);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Link to="/goals" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Back to goals
+      </Link>
+
+      <div>
+        <h1 className="text-2xl font-bold">{goal.icon} {goal.name}</h1>
+        <p className="text-muted-foreground">{goal.description}</p>
+      </div>
+
+      <TagPicker entityType={EntityType.Goal} entityId={id} selected={goal.tags} onChange={() => qc.invalidateQueries({ queryKey: ['goal', id] })} />
+
+      {goal.kind === GoalKind.TripLink ? (
+        <Card><CardContent className="p-4">
+          {goal.linkedTripId ? (
+            <Link to={`/trips/${goal.linkedTripId}`} className="text-primary underline">Open linked trip →</Link>
+          ) : (
+            <p className="text-sm text-muted-foreground">No trip linked yet.</p>
+          )}
+        </CardContent></Card>
+      ) : (
+        <>
+          {pins.length > 0 && <LocationMap pins={pins} height={300} onPinClick={setActiveItemId} />}
+
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Items</h2>
+            <Dialog open={addOpen} onOpenChange={setAddOpen}>
+              <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4" /> Add item</Button></DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Add item</DialogTitle></DialogHeader>
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <Label>Name</Label>
+                    <Input value={itemDraft.name ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, name: e.target.value })} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><Label>Lat</Label><Input value={itemDraft.lat ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, lat: e.target.value })} /></div>
+                    <div><Label>Lng</Label><Input value={itemDraft.lng ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, lng: e.target.value })} /></div>
+                  </div>
+                  {goal.fieldDefinitions.map((f) => (
+                    <div key={f.id}>
+                      <Label>{f.label}</Label>
+                      <Input
+                        type={f.fieldType === GoalFieldType.Date ? 'date' : f.fieldType === GoalFieldType.Number ? 'number' : 'text'}
+                        value={itemDraft[f.id] ?? ''}
+                        onChange={(e) => setItemDraft({ ...itemDraft, [f.id]: e.target.value })}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button onClick={() => addItem.mutate()} disabled={!itemDraft.name}>Add</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted text-left">
+                <tr>
+                  <th className="p-2 w-10"></th>
+                  <th className="p-2">Name</th>
+                  {goal.fieldDefinitions.map((f) => <th className="p-2" key={f.id}>{f.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id} className="border-t cursor-pointer hover:bg-accent" onClick={() => setActiveItemId(item.id)}>
+                    <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox checked={item.isCompleted} onCheckedChange={(c) => toggleComplete.mutate({ itemId: item.id, completed: !!c })} />
+                    </td>
+                    <td className={`p-2 ${item.isCompleted ? 'line-through text-muted-foreground' : ''}`}>{item.name}</td>
+                    {goal.fieldDefinitions.map((f) => (
+                      <td className="p-2" key={f.id}>{item.fieldValues.find((v) => v.goalFieldDefinitionId === f.id)?.value}</td>
+                    ))}
+                  </tr>
+                ))}
+                {items.length === 0 && <tr><td colSpan={2 + goal.fieldDefinitions.length} className="p-4 text-center text-muted-foreground">No items yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {activeItem && (
+        <Dialog open onOpenChange={(o) => !o && setActiveItemId(null)}>
+          <DialogContent>
+            <ItemDrawer goalId={id} item={activeItem} fieldDefinitions={goal.fieldDefinitions} onToggle={(completed) => toggleComplete.mutate({ itemId: activeItem.id, completed })} />
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  )
+}
+
+function ItemDrawer({
+  goalId, item, fieldDefinitions, onToggle,
+}: { goalId: string; item: GoalItem; fieldDefinitions: { id: string; label: string }[]; onToggle: (completed: boolean) => void }) {
+  const qc = useQueryClient()
+  const [noteText, setNoteText] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
+
+  const addNote = useMutation({
+    mutationFn: () => GoalsApi.addItemNote(item.id, noteText),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] }); setNoteText('') },
+  })
+  const addLink = useMutation({
+    mutationFn: () => GoalsApi.addItemLink(item.id, linkUrl),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] }); setLinkUrl('') },
+  })
+
+  return (
+    <div className="flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Checkbox checked={item.isCompleted} onCheckedChange={(c) => onToggle(!!c)} />
+          {item.name}
+        </DialogTitle>
+      </DialogHeader>
+
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        {fieldDefinitions.map((f) => (
+          <div key={f.id}>
+            <span className="text-muted-foreground">{f.label}: </span>
+            {item.fieldValues.find((v) => v.goalFieldDefinitionId === f.id)?.value}
+          </div>
+        ))}
+      </div>
+
+      <TagPicker entityType={EntityType.GoalItem} entityId={item.id} selected={item.tags} onChange={() => qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] })} />
+
+      <div>
+        <Label>Photos / memorabilia</Label>
+        <MediaGallery entityType={EntityType.GoalItem} entityId={item.id} />
+      </div>
+
+      <div>
+        <Label>Notes</Label>
+        <div className="flex flex-col gap-2">
+          {item.notes.map((n) => <p key={n.id} className="rounded-md border p-2 text-sm">{n.text}</p>)}
+          <div className="flex gap-2">
+            <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Add a note..." />
+            <Button onClick={() => addNote.mutate()} disabled={!noteText}>Add</Button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <Label>Links</Label>
+        <div className="flex flex-col gap-2">
+          {item.links.map((l) => <a key={l.id} href={l.url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">{l.url}</a>)}
+          <div className="flex gap-2">
+            <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..." />
+            <Button onClick={() => addLink.mutate()} disabled={!linkUrl}>Add</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
