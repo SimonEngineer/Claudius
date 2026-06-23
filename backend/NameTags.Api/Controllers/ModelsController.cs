@@ -17,6 +17,12 @@ public class ModelsController : ControllerBase
 {
     private readonly ModelGenerationService _generationService = new();
 
+    public sealed record ShapeParamsDto(
+        float CornerRadiusMm = 4f,
+        int StarPoints = 5,
+        float StarInnerRadiusRatio = 0.45f,
+        int CurveSegments = 48);
+
     public sealed record GenerateTagRequestDto(
         string Text,
         ShapeType ShapeType = ShapeType.RoundedRectangle,
@@ -25,7 +31,8 @@ public class ModelsController : ControllerBase
         float PlateThicknessMm = 3f,
         float TextDepthMm = 2f,
         string FontFamilyOrPath = "DejaVuSans-Bold.ttf",
-        byte[]? CustomSvgBytes = null);
+        byte[]? CustomSvgBytes = null,
+        ShapeParamsDto? ShapeParams = null);
 
     [HttpPost("preview.stl")]
     public IActionResult Preview([FromBody] GenerateTagRequestDto dto) => GenerateStl(dto, asAttachment: false);
@@ -36,6 +43,7 @@ public class ModelsController : ControllerBase
     private IActionResult GenerateStl(GenerateTagRequestDto dto, bool asAttachment)
     {
         var fontPath = ResolveFontPath(dto.FontFamilyOrPath);
+        var shapeParamsDto = dto.ShapeParams ?? new ShapeParamsDto();
         var request = new TagGenerationRequest
         {
             Text = dto.Text,
@@ -46,6 +54,13 @@ public class ModelsController : ControllerBase
             PlateThicknessMm = dto.PlateThicknessMm,
             TextDepthMm = dto.TextDepthMm,
             CustomSvgBytes = dto.CustomSvgBytes,
+            ShapeParams = new ShapeParams
+            {
+                CornerRadiusMm = shapeParamsDto.CornerRadiusMm,
+                StarPoints = shapeParamsDto.StarPoints,
+                StarInnerRadiusRatio = shapeParamsDto.StarInnerRadiusRatio,
+                CurveSegments = shapeParamsDto.CurveSegments,
+            },
         };
 
         var mesh = _generationService.GenerateTagMesh(request);
