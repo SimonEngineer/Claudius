@@ -36,6 +36,21 @@ public class DebugController : ControllerBase
         return File(stream, "model/stl", $"plate-{shape}.stl");
     }
 
+    /// <summary>Returns a standalone extruded text mesh, to verify glyph outline extraction (incl. letters with holes).</summary>
+    [HttpGet("text.stl")]
+    public IActionResult GetText([FromQuery] string text = "Bob")
+    {
+        var provider = new SkiaGlyphOutlineProvider();
+        var fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans-Bold.ttf");
+        var outline = provider.GetTextOutline(text, fontPath, fontSizeMm: 10);
+        var mesh = MeshExtruder.Extrude(outline, zBottom: 0, zTop: 2);
+
+        var stream = new MemoryStream();
+        StlWriter.WriteBinary(stream, mesh);
+        stream.Position = 0;
+        return File(stream, "model/stl", "text.stl");
+    }
+
     private static Mesh3D BuildBox(Vector3 size)
     {
         var mesh = new Mesh3D();
