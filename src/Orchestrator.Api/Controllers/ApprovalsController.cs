@@ -1,0 +1,72 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Orchestrator.Api.Dtos;
+using Orchestrator.Domain;
+using Orchestrator.Infrastructure.Persistence;
+
+namespace Orchestrator.Api.Controllers;
+
+[ApiController]
+[Route("api/approvals")]
+public class ApprovalsController(OrchestratorDbContext db) : ControllerBase
+{
+    [HttpGet("pending")]
+    public async Task<ActionResult<IEnumerable<Approval>>> ListPending(CancellationToken ct)
+    {
+        var approvals = await db.Approvals
+            .Where(a => a.Status == ApprovalStatus.Pending)
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync(ct);
+        return Ok(approvals);
+    }
+
+    /// <summary>
+    /// Approving/answering unblocks the task immediately: it flips back to ReadyForWork so the
+    /// next scheduler tick can pick it up -- the queue never sits idle waiting on a human past
+    /// the moment they actually respond.
+    /// </summary>
+    [HttpPost("{id:guid}/approve")]
+    public async Task<IActionResult> Approve(Guid id, ResolveApprovalRequest request, CancellationToken ct)
+        => await Resolve(id, ApprovalStatus.Approved, request, ct);
+
+    [HttpPost("{id:guid}/reject")]
+    public async Task<IActionResult> Reject(Guid id, ResolveApprovalRequest request, CancellationToken ct)
+        => await Resolve(id, ApprovalStatus.Rejected, request, ct);
+
+    private async Task<IActionResult> Resolve(Guid id, ApprovalStatus status, ResolveApprovalRequest request, CancellationToken ct)
+    {
+        var approval = await db.Approvals.Include(a => a.Task).FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (approval is null)
+        {
+            return NotFound();
+        }
+
+        if (approval.Status != ApprovalStatus.Pending)
+        {
+            return Conflict($"Approval {id} was already {approval.Status}.");
+        }
+
+        approval.Status = status;
+        approval.Answer = request.Answer;
+        approval.ResolvedBy = request.ResolvedBy;
+        approval.ResolvedAt = DateTimeOffset.UtcNow;
+
+        var task = approval.Task!;
+        if (status == ApprovalStatus.Approved)
+        {
+            if (!string.IsNullOrWhiteSpace(request.Answer))
+            {
+                task.Description = $"{task.Description}\n\nUser answered: {request.Answer}";
+            }
+            task.State = TaskState.ReadyForWork;
+        }
+        else
+        {
+            task.State = TaskState.DeadLetter;
+        }
+        task.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+}

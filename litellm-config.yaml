@@ -1,0 +1,25 @@
+# LiteLLM proxy: single OpenAI/Anthropic-compatible endpoint in front of both the cloud
+# supervisor models and the local worker models. Per-provider timeouts matter here -- local
+# Ollama calls can legitimately take many minutes, cloud calls should fail fast on hangs.
+model_list:
+  - model_name: anthropic/claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 120
+
+  - model_name: ollama/qwen2.5-coder:32b
+    litellm_params:
+      model: ollama/qwen2.5-coder:32b
+      api_base: os.environ/OLLAMA_BASE_URL
+      timeout: 1800
+      stream_timeout: 1800
+
+litellm_settings:
+  drop_params: true
+  num_retries: 3
+  request_timeout: 120 # default; per-model timeout above overrides this for local models
+
+router_settings:
+  allowed_fails: 3
+  cooldown_time: 30 # circuit breaker: stop hammering a down local host for 30s after 3 fails
