@@ -16,8 +16,14 @@ public sealed record TagGenerationRequest
     public float PlateThicknessMm { get; init; } = 3f;
     public float TextDepthMm { get; init; } = 2f;
 
-    /// <summary>Margin between the text's bounding box and the plate's outer edge, used for auto-fit sizing.</summary>
-    public float TextMarginMm { get; init; } = 5f;
+    /// <summary>Independent per-side margins between the text's bounding box and the plate's outer edge, used for auto-fit sizing.</summary>
+    public float TextMarginLeftMm { get; init; } = 5f;
+    public float TextMarginRightMm { get; init; } = 5f;
+    public float TextMarginTopMm { get; init; } = 5f;
+    public float TextMarginBottomMm { get; init; } = 5f;
+
+    public TextHorizontalAlign TextHorizontalAlign { get; init; } = TextHorizontalAlign.Center;
+    public TextVerticalAlign TextVerticalAlign { get; init; } = TextVerticalAlign.Center;
 
     /// <summary>How far the text's bottom is sunk below the plate's top, so the two solids genuinely overlap (avoids z-fighting at the seam).</summary>
     public float OverlapEpsilonMm { get; init; } = 0.2f;

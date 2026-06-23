@@ -1,4 +1,5 @@
 using NameTags.Core.Outlines;
+using NameTags.Core.Pipeline;
 
 namespace NameTags.Data.Entities;
 
@@ -25,6 +26,13 @@ public sealed class TagProject
     public float PlateHeightMm { get; set; } = 30f;
     public float PlateThicknessMm { get; set; } = 3f;
     public float TextDepthMm { get; set; } = 2f;
+
+    public float TextMarginLeftMm { get; set; } = 5f;
+    public float TextMarginRightMm { get; set; } = 5f;
+    public float TextMarginTopMm { get; set; } = 5f;
+    public float TextMarginBottomMm { get; set; } = 5f;
+    public TextHorizontalAlign TextHorizontalAlign { get; set; } = TextHorizontalAlign.Center;
+    public TextVerticalAlign TextVerticalAlign { get; set; } = TextVerticalAlign.Center;
 
     public List<TagName> Names { get; set; } = new();
 }

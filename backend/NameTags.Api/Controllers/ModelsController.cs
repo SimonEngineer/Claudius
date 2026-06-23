@@ -28,7 +28,13 @@ public class ModelsController : ControllerBase
         float TextDepthMm = 2f,
         string FontFamilyOrPath = "DejaVuSans-Bold.ttf",
         byte[]? CustomSvgBytes = null,
-        ShapeParamsDto? ShapeParams = null);
+        ShapeParamsDto? ShapeParams = null,
+        float TextMarginLeftMm = 5f,
+        float TextMarginRightMm = 5f,
+        float TextMarginTopMm = 5f,
+        float TextMarginBottomMm = 5f,
+        TextHorizontalAlign TextHorizontalAlign = TextHorizontalAlign.Center,
+        TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center);
 
     [HttpPost("preview.stl")]
     public IActionResult Preview([FromBody] GenerateTagRequestDto dto) => GenerateStl(dto, asAttachment: false);
@@ -51,6 +57,12 @@ public class ModelsController : ControllerBase
             PlateHeightMm = dto.PlateHeightMm,
             PlateThicknessMm = dto.PlateThicknessMm,
             TextDepthMm = dto.TextDepthMm,
+            TextMarginLeftMm = dto.TextMarginLeftMm,
+            TextMarginRightMm = dto.TextMarginRightMm,
+            TextMarginTopMm = dto.TextMarginTopMm,
+            TextMarginBottomMm = dto.TextMarginBottomMm,
+            TextHorizontalAlign = dto.TextHorizontalAlign,
+            TextVerticalAlign = dto.TextVerticalAlign,
             CustomSvgBytes = dto.CustomSvgBytes,
             ShapeParams = (dto.ShapeParams ?? new ShapeParamsDto()).ToShapeParams(),
         };

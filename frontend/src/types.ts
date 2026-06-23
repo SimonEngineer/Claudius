@@ -19,6 +19,9 @@ export const SHAPE_TYPES: ShapeType[] = [
   "CustomSvg",
 ]
 
+export type TextHorizontalAlign = "Left" | "Center" | "Right"
+export type TextVerticalAlign = "Top" | "Center" | "Bottom"
+
 export interface ShapeParams {
   cornerRadiusMm: number
   starPoints: number
@@ -40,6 +43,12 @@ export interface TagGenerationParams {
   plateHeightMm: number
   plateThicknessMm: number
   textDepthMm: number
+  textMarginLeftMm: number
+  textMarginRightMm: number
+  textMarginTopMm: number
+  textMarginBottomMm: number
+  textHorizontalAlign: TextHorizontalAlign
+  textVerticalAlign: TextVerticalAlign
   fontFamilyOrPath: string
   customSvgBytes?: string | null
   shapeParams: ShapeParams
@@ -51,6 +60,12 @@ export const DEFAULT_GENERATION_PARAMS: Omit<TagGenerationParams, "text"> = {
   plateHeightMm: 30,
   plateThicknessMm: 3,
   textDepthMm: 2,
+  textMarginLeftMm: 5,
+  textMarginRightMm: 5,
+  textMarginTopMm: 5,
+  textMarginBottomMm: 5,
+  textHorizontalAlign: "Center",
+  textVerticalAlign: "Center",
   fontFamilyOrPath: "DejaVuSans-Bold.ttf",
   customSvgBytes: null,
   shapeParams: DEFAULT_SHAPE_PARAMS,
@@ -84,6 +99,12 @@ export interface ProjectDetail {
   plateHeightMm: number
   plateThicknessMm: number
   textDepthMm: number
+  textMarginLeftMm: number
+  textMarginRightMm: number
+  textMarginTopMm: number
+  textMarginBottomMm: number
+  textHorizontalAlign: TextHorizontalAlign
+  textVerticalAlign: TextVerticalAlign
   createdAt: string
   names: TagName[]
 }
@@ -98,4 +119,10 @@ export interface SaveProjectPayload {
   plateHeightMm: number
   plateThicknessMm: number
   textDepthMm: number
+  textMarginLeftMm: number
+  textMarginRightMm: number
+  textMarginTopMm: number
+  textMarginBottomMm: number
+  textHorizontalAlign: TextHorizontalAlign
+  textVerticalAlign: TextVerticalAlign
 }

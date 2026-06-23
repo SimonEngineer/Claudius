@@ -15,6 +15,14 @@ public sealed class NameTagsDbContext(DbContextOptions<NameTagsDbContext> option
             .HasConversion<string>();
 
         modelBuilder.Entity<TagProject>()
+            .Property(p => p.TextHorizontalAlign)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<TagProject>()
+            .Property(p => p.TextVerticalAlign)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<TagProject>()
             .HasMany(p => p.Names)
             .WithOne(n => n.TagProject)
             .HasForeignKey(n => n.TagProjectId)

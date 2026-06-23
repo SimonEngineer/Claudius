@@ -1,4 +1,5 @@
 using NameTags.Core.Outlines;
+using NameTags.Core.Pipeline;
 using NameTags.Data.Entities;
 
 namespace NameTags.Api.Dtos;
@@ -20,6 +21,12 @@ public sealed record ProjectDetailDto(
     float PlateHeightMm,
     float PlateThicknessMm,
     float TextDepthMm,
+    float TextMarginLeftMm,
+    float TextMarginRightMm,
+    float TextMarginTopMm,
+    float TextMarginBottomMm,
+    TextHorizontalAlign TextHorizontalAlign,
+    TextVerticalAlign TextVerticalAlign,
     DateTime CreatedAt,
     List<TagNameDto> Names)
 {
@@ -34,6 +41,12 @@ public sealed record ProjectDetailDto(
         p.PlateHeightMm,
         p.PlateThicknessMm,
         p.TextDepthMm,
+        p.TextMarginLeftMm,
+        p.TextMarginRightMm,
+        p.TextMarginTopMm,
+        p.TextMarginBottomMm,
+        p.TextHorizontalAlign,
+        p.TextVerticalAlign,
         p.CreatedAt,
         p.Names.OrderBy(n => n.SortOrder)
             .Select(n => new TagNameDto(n.Id, n.Text, n.SortOrder, n.TextDepthMmOverride))
@@ -49,4 +62,10 @@ public sealed record SaveProjectDto(
     float PlateWidthMm = 70f,
     float PlateHeightMm = 30f,
     float PlateThicknessMm = 3f,
-    float TextDepthMm = 2f);
+    float TextDepthMm = 2f,
+    float TextMarginLeftMm = 5f,
+    float TextMarginRightMm = 5f,
+    float TextMarginTopMm = 5f,
+    float TextMarginBottomMm = 5f,
+    TextHorizontalAlign TextHorizontalAlign = TextHorizontalAlign.Center,
+    TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center);

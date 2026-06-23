@@ -1,3 +1,4 @@
+using System.Numerics;
 using NameTags.Core.Extrusion;
 using NameTags.Core.Geometry;
 using NameTags.Core.Outlines;
@@ -25,17 +26,51 @@ public sealed class ModelGenerationService
         var plateOutline = GetPlateOutline(request);
         var plateMesh = MeshExtruder.Extrude(plateOutline, zBottom: 0f, zTop: request.PlateThicknessMm);
 
-        var availableWidth = Math.Max(1f, request.PlateWidthMm - 2 * request.TextMarginMm);
-        var availableHeight = Math.Max(1f, request.PlateHeightMm - 2 * request.TextMarginMm);
+        var availableWidth = Math.Max(1f, request.PlateWidthMm - request.TextMarginLeftMm - request.TextMarginRightMm);
+        var availableHeight = Math.Max(1f, request.PlateHeightMm - request.TextMarginTopMm - request.TextMarginBottomMm);
 
         var rawTextOutline = _glyphOutlineProvider.GetTextOutline(request.Text, request.FontFamilyOrPath, NominalTextSizeMm);
         var fittedTextOutline = rawTextOutline.FitToSize(availableWidth, availableHeight);
+        var alignedTextOutline = AlignWithinPlate(fittedTextOutline, request, availableWidth, availableHeight);
 
         float textBottom = request.PlateThicknessMm - request.OverlapEpsilonMm;
         float textTop = textBottom + request.TextDepthMm;
-        var textMesh = MeshExtruder.Extrude(fittedTextOutline, textBottom, textTop);
+        var textMesh = MeshExtruder.Extrude(alignedTextOutline, textBottom, textTop);
 
         return Mesh3D.Combine(plateMesh, textMesh);
+    }
+
+    /// <summary>
+    /// Moves a text outline (already fit to size and centered at the origin) into its
+    /// final position: first re-centers it on the available box (which is off-center
+    /// from the plate whenever the per-side margins are asymmetric), then nudges it to
+    /// the requested edge per the horizontal/vertical alignment, leaving it centered
+    /// within the available box along any axis set to Center.
+    /// </summary>
+    private static Polygon2D AlignWithinPlate(Polygon2D textOutline, TagGenerationRequest request, float availableWidth, float availableHeight)
+    {
+        var marginCenterOffset = new Vector2(
+            (request.TextMarginLeftMm - request.TextMarginRightMm) / 2f,
+            (request.TextMarginBottomMm - request.TextMarginTopMm) / 2f);
+
+        var (min, max) = textOutline.GetBounds();
+        float halfTextWidth = (max.X - min.X) / 2f;
+        float halfTextHeight = (max.Y - min.Y) / 2f;
+
+        float alignX = request.TextHorizontalAlign switch
+        {
+            TextHorizontalAlign.Left => -(availableWidth / 2f - halfTextWidth),
+            TextHorizontalAlign.Right => availableWidth / 2f - halfTextWidth,
+            _ => 0f,
+        };
+        float alignY = request.TextVerticalAlign switch
+        {
+            TextVerticalAlign.Top => availableHeight / 2f - halfTextHeight,
+            TextVerticalAlign.Bottom => -(availableHeight / 2f - halfTextHeight),
+            _ => 0f,
+        };
+
+        return textOutline.Translate(marginCenterOffset + new Vector2(alignX, alignY));
     }
 
     private static Polygon2D GetPlateOutline(TagGenerationRequest request)

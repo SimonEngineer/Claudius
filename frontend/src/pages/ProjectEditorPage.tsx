@@ -27,6 +27,12 @@ export function ProjectEditorPage() {
     plateHeightMm: DEFAULT_GENERATION_PARAMS.plateHeightMm,
     plateThicknessMm: DEFAULT_GENERATION_PARAMS.plateThicknessMm,
     textDepthMm: DEFAULT_GENERATION_PARAMS.textDepthMm,
+    textMarginLeftMm: DEFAULT_GENERATION_PARAMS.textMarginLeftMm,
+    textMarginRightMm: DEFAULT_GENERATION_PARAMS.textMarginRightMm,
+    textMarginTopMm: DEFAULT_GENERATION_PARAMS.textMarginTopMm,
+    textMarginBottomMm: DEFAULT_GENERATION_PARAMS.textMarginBottomMm,
+    textHorizontalAlign: DEFAULT_GENERATION_PARAMS.textHorizontalAlign,
+    textVerticalAlign: DEFAULT_GENERATION_PARAMS.textVerticalAlign,
   })
   const [shapeParams, setShapeParams] = useState<ShapeParams>(DEFAULT_GENERATION_PARAMS.shapeParams)
   const [isSaving, setIsSaving] = useState(false)
@@ -48,6 +54,12 @@ export function ProjectEditorPage() {
           plateHeightMm: project.plateHeightMm,
           plateThicknessMm: project.plateThicknessMm,
           textDepthMm: project.textDepthMm,
+          textMarginLeftMm: project.textMarginLeftMm,
+          textMarginRightMm: project.textMarginRightMm,
+          textMarginTopMm: project.textMarginTopMm,
+          textMarginBottomMm: project.textMarginBottomMm,
+          textHorizontalAlign: project.textHorizontalAlign,
+          textVerticalAlign: project.textVerticalAlign,
         })
         setShapeParams(project.shapeParams)
         setSavedNames(project.names)

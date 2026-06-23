@@ -126,6 +126,12 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
             PlateHeightMm = project.PlateHeightMm,
             PlateThicknessMm = project.PlateThicknessMm,
             TextDepthMm = name.TextDepthMmOverride ?? project.TextDepthMm,
+            TextMarginLeftMm = project.TextMarginLeftMm,
+            TextMarginRightMm = project.TextMarginRightMm,
+            TextMarginTopMm = project.TextMarginTopMm,
+            TextMarginBottomMm = project.TextMarginBottomMm,
+            TextHorizontalAlign = project.TextHorizontalAlign,
+            TextVerticalAlign = project.TextVerticalAlign,
             CustomSvgBytes = project.CustomSvgBytes,
             ShapeParams = new ShapeParamsDto(
                 project.CornerRadiusMm, project.StarPoints, project.StarInnerRadiusRatio, project.CurveSegments
@@ -155,6 +161,12 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         project.PlateHeightMm = dto.PlateHeightMm;
         project.PlateThicknessMm = dto.PlateThicknessMm;
         project.TextDepthMm = dto.TextDepthMm;
+        project.TextMarginLeftMm = dto.TextMarginLeftMm;
+        project.TextMarginRightMm = dto.TextMarginRightMm;
+        project.TextMarginTopMm = dto.TextMarginTopMm;
+        project.TextMarginBottomMm = dto.TextMarginBottomMm;
+        project.TextHorizontalAlign = dto.TextHorizontalAlign;
+        project.TextVerticalAlign = dto.TextVerticalAlign;
     }
 
     private static string ResolveFontPath(string fontFamilyOrPath) =>
