@@ -9,6 +9,7 @@ const VARIANT_BY_STATE: Record<TaskState, BadgeProps["variant"]> = {
   Verifying: "default",
   NeedsFix: "warning",
   AwaitingInput: "warning",
+  Decomposed: "outline",
   Done: "success",
   Failed: "destructive",
   DeadLetter: "destructive",

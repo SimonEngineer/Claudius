@@ -21,16 +21,25 @@ public class TaskRunnerJob(
     OrchestratorDbContext db,
     ClaudeCodeAdapter claudeCodeAdapter,
     AiderAdapter aiderAdapter,
+    GitWorktreeService worktreeService,
+    IRunCancellationRegistry cancellationRegistry,
     IEventBroadcaster broadcaster,
     IOptions<SchedulerOptions> options,
     ILogger<TaskRunnerJob> logger)
 {
-    /// <summary>Dispatched onto the "supervisor" Hangfire queue by SchedulerTickJob.</summary>
+    private const int MaxSkillsInPrompt = 10;
+
+    /// <summary>
+    /// AutomaticRetry is disabled: the task state machine (RetryCount/DeadLetter) is our retry
+    /// policy. Letting Hangfire also retry on top would double-dispatch the same AgentTask and
+    /// break the single-claim invariant the lease/lock columns are there to enforce.
+    /// </summary>
     [Queue("supervisor")]
+    [AutomaticRetry(Attempts = 0)]
     public Task ExecuteSupervisorTaskAsync(Guid taskId) => ExecuteAsync(taskId);
 
-    /// <summary>Dispatched onto the "worker" Hangfire queue by SchedulerTickJob.</summary>
     [Queue("worker")]
+    [AutomaticRetry(Attempts = 0)]
     public Task ExecuteWorkerTaskAsync(Guid taskId) => ExecuteAsync(taskId);
 
     private async Task ExecuteAsync(Guid taskId)
@@ -59,16 +68,31 @@ public class TaskRunnerJob(
         db.Runs.Add(run);
         await db.SaveChangesAsync(ct);
 
+        var rootTaskId = task.ParentTaskId ?? task.Id;
+        string workingDirectory;
+        try
+        {
+            workingDirectory = await worktreeService.EnsureWorktreeAsync(project.RepoPath, rootTaskId, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "TaskRunnerJob: failed to prepare worktree for task {TaskId}, falling back to repo root", taskId);
+            workingDirectory = project.RepoPath;
+        }
+
+        var existingSkillsJson = await BuildExistingSkillsJsonAsync(project.Id, ct);
+
         var context = new RunContext(
             TaskId: task.Id,
             RunId: run.Id,
             Mode: mode!.Value,
-            WorkingDirectory: project.RepoPath,
+            WorkingDirectory: workingDirectory,
             Model: model,
             Instruction: BuildInstruction(task, mode.Value),
             PlanJson: task.PlanJson,
             AcceptanceCriteriaJson: task.AcceptanceCriteriaJson,
-            Timeout: timeout);
+            Timeout: timeout,
+            ExistingSkillsJson: existingSkillsJson);
 
         async Task OnEvent(EngineEvent ev)
         {
@@ -78,22 +102,33 @@ public class TaskRunnerJob(
             await broadcaster.BroadcastEventAsync(task.Id, run.Id, entity, ct);
         }
 
+        var runToken = cancellationRegistry.Register(task.Id);
         EngineResult result;
         try
         {
             var adapter = lane == Lane.Supervisor ? (IEngineAdapter)claudeCodeAdapter : aiderAdapter;
-            result = await adapter.RunAsync(context, OnEvent, ct);
+            result = await adapter.RunAsync(context, OnEvent, runToken);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("TaskRunnerJob: run {RunId} for task {TaskId} was cancelled", run.Id, taskId);
+            result = new EngineResult(EngineOutcome.Cancelled, "Cancelled by user.");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "TaskRunnerJob: unhandled error running task {TaskId}", taskId);
             result = new EngineResult(EngineOutcome.Failed, $"Unhandled error: {ex.Message}");
         }
+        finally
+        {
+            cancellationRegistry.Unregister(task.Id);
+        }
 
         run.Status = result.Outcome switch
         {
             EngineOutcome.Succeeded => RunStatus.Succeeded,
             EngineOutcome.NeedsInput => RunStatus.Succeeded,
+            EngineOutcome.Cancelled => RunStatus.Cancelled,
             _ => RunStatus.Failed
         };
         run.FinishedAt = DateTimeOffset.UtcNow;
@@ -102,7 +137,7 @@ public class TaskRunnerJob(
         run.CostUsd = result.CostUsd;
         run.ExitSummaryJson = JsonSerializer.Serialize(new { result.Outcome, result.Summary });
 
-        await ApplyStateTransitionAsync(task, mode.Value, result, run, ct);
+        var touchedParent = await ApplyStateTransitionAsync(task, mode.Value, result, run, ct);
 
         task.LockedBy = null;
         task.LeaseExpiresAt = null;
@@ -110,16 +145,43 @@ public class TaskRunnerJob(
 
         await db.SaveChangesAsync(ct);
         await broadcaster.BroadcastTaskStateChangedAsync(task.Id, task.ProjectId, task.State, ct);
+        if (touchedParent is not null)
+        {
+            await broadcaster.BroadcastTaskStateChangedAsync(touchedParent.Id, touchedParent.ProjectId, touchedParent.State, ct);
+        }
     }
 
-    private async Task ApplyStateTransitionAsync(AgentTask task, EngineMode mode, EngineResult result, Run run, CancellationToken ct)
+    private async Task<AgentTask?> ApplyStateTransitionAsync(AgentTask task, EngineMode mode, EngineResult result, Run run, CancellationToken ct)
     {
         switch (result.Outcome)
         {
             case EngineOutcome.Succeeded when mode == EngineMode.Plan:
                 task.PlanJson = result.PlanJson;
                 task.AcceptanceCriteriaJson = ExtractAcceptanceCriteria(result.PlanJson);
-                task.State = TaskState.ReadyForWork;
+                var steps = ExtractPlanSteps(result.PlanJson);
+                if (steps.Count > 1)
+                {
+                    foreach (var step in steps)
+                    {
+                        db.Tasks.Add(new AgentTask
+                        {
+                            ProjectId = task.ProjectId,
+                            GoalId = task.GoalId,
+                            ParentTaskId = task.Id,
+                            Title = step,
+                            Description = step,
+                            Lane = Lane.Worker,
+                            State = TaskState.ReadyForWork,
+                            Priority = task.Priority,
+                            AcceptanceCriteriaJson = task.AcceptanceCriteriaJson
+                        });
+                    }
+                    task.State = TaskState.Decomposed;
+                }
+                else
+                {
+                    task.State = TaskState.ReadyForWork;
+                }
                 break;
 
             case EngineOutcome.Succeeded when mode == EngineMode.Implement:
@@ -128,7 +190,17 @@ public class TaskRunnerJob(
 
             case EngineOutcome.Succeeded when mode == EngineMode.Verify:
                 task.State = TaskState.Done;
-                break;
+                if (result.SkillName is not null && result.SkillContent is not null)
+                {
+                    db.Skills.Add(new Skill
+                    {
+                        ProjectId = task.ProjectId,
+                        Name = result.SkillName,
+                        Content = result.SkillContent,
+                        CreatedByRunId = run.Id
+                    });
+                }
+                return await PropagateToParentAsync(task, TaskState.Done, ct);
 
             case EngineOutcome.NeedsInput when mode == EngineMode.Implement:
                 var approval = new Approval
@@ -150,6 +222,10 @@ public class TaskRunnerJob(
                 task.State = TaskState.NeedsFix;
                 break;
 
+            case EngineOutcome.Cancelled:
+                task.State = TaskState.DeadLetter;
+                return await PropagateToParentAsync(task, TaskState.DeadLetter, ct);
+
             case EngineOutcome.Failed:
             default:
                 task.RetryCount += 1;
@@ -162,10 +238,93 @@ public class TaskRunnerJob(
                         EngineMode.Verify => TaskState.ReadyForWork,
                         _ => TaskState.Queued
                     };
+                if (task.State == TaskState.DeadLetter)
+                {
+                    return await PropagateToParentAsync(task, TaskState.DeadLetter, ct);
+                }
                 break;
         }
 
-        await Task.CompletedTask;
+        return null;
+    }
+
+    /// <summary>
+    /// Bubbles a child task's completion (or terminal failure) up to its decomposed parent. The
+    /// child's own State mutation above is only in the EF change tracker at this point (not yet
+    /// SaveChanges'd), so siblings are queried excluding the child by id and the in-memory
+    /// `childState` is trusted instead of re-reading the child's row from the database.
+    /// </summary>
+    private async Task<AgentTask?> PropagateToParentAsync(AgentTask child, TaskState childState, CancellationToken ct)
+    {
+        if (child.ParentTaskId is not { } parentId)
+        {
+            return null;
+        }
+
+        var parent = await db.Tasks.FirstOrDefaultAsync(t => t.Id == parentId, ct);
+        if (parent is null || parent.State != TaskState.Decomposed)
+        {
+            return null;
+        }
+
+        if (childState == TaskState.DeadLetter)
+        {
+            parent.State = TaskState.DeadLetter;
+            parent.UpdatedAt = DateTimeOffset.UtcNow;
+            return parent;
+        }
+
+        var incompleteSiblings = await db.Tasks.CountAsync(
+            t => t.ParentTaskId == parentId && t.Id != child.Id && t.State != TaskState.Done, ct);
+
+        if (incompleteSiblings == 0)
+        {
+            // All children done: hand the combined work back to the supervisor for a final check.
+            parent.State = TaskState.Verifying;
+            parent.UpdatedAt = DateTimeOffset.UtcNow;
+            return parent;
+        }
+
+        return null;
+    }
+
+    private async Task<string?> BuildExistingSkillsJsonAsync(Guid projectId, CancellationToken ct)
+    {
+        var skills = await db.Skills
+            .Where(s => s.ProjectId == projectId)
+            .OrderByDescending(s => s.CreatedAt)
+            .Take(MaxSkillsInPrompt)
+            .Select(s => new { s.Name, s.Content })
+            .ToListAsync(ct);
+
+        return skills.Count == 0 ? null : JsonSerializer.Serialize(skills);
+    }
+
+    private static List<string> ExtractPlanSteps(string? planJson)
+    {
+        if (planJson is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(planJson);
+            if (!doc.RootElement.TryGetProperty("plan", out var plan) || plan.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return plan.EnumerateArray()
+                .Select(e => e.GetString())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     private static string? ExtractAcceptanceCriteria(string? planJson)

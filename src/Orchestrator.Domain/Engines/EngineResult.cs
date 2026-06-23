@@ -4,7 +4,8 @@ public enum EngineOutcome
 {
     Succeeded,
     NeedsInput,
-    Failed
+    Failed,
+    Cancelled
 }
 
 public record EngineResult(
@@ -16,5 +17,7 @@ public record EngineResult(
     string[]? ApprovalOptions = null,
     int? TokensIn = null,
     int? TokensOut = null,
-    decimal? CostUsd = null
+    decimal? CostUsd = null,
+    string? SkillName = null,
+    string? SkillContent = null
 );

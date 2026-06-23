@@ -27,6 +27,8 @@ public static class DependencyInjection
         services.Configure<SchedulerOptions>(configuration.GetSection(SchedulerOptions.SectionName));
 
         services.AddSingleton<IProcessRunner, ProcessRunner>();
+        services.AddSingleton<GitWorktreeService>();
+        services.AddSingleton<IRunCancellationRegistry, RunCancellationRegistry>();
         services.AddScoped<ClaudeCodeAdapter>();
         services.AddScoped<AiderAdapter>();
         services.AddScoped<TaskClaimingService>();

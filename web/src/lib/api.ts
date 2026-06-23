@@ -61,4 +61,8 @@ export const api = {
     request<void>(`/api/approvals/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
   reject: (id: string, body: ResolveApprovalInput) =>
     request<void>(`/api/approvals/${id}/reject`, { method: "POST", body: JSON.stringify(body) }),
+
+  cancelTask: (id: string) => request<void>(`/api/tasks/${id}/cancel`, { method: "POST" }),
+
+  getHealth: () => request<{ status: string; database: boolean }>("/api/health"),
 };

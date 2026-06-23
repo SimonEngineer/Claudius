@@ -13,9 +13,11 @@ import type { AgentTask, Approval } from "@/types/api";
 export function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const [task, setTask] = useState<AgentTask | null>(null);
+  const [subtasks, setSubtasks] = useState<AgentTask[]>([]);
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [answer, setAnswer] = useState("");
   const [resolving, setResolving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const refreshTask = useCallback(() => {
     if (!taskId) return;
@@ -23,6 +25,24 @@ export function TaskDetailPage() {
   }, [taskId]);
 
   useEffect(refreshTask, [refreshTask]);
+
+  useEffect(() => {
+    if (!task) return;
+    api
+      .listTasksForProject(task.projectId)
+      .then((all) => setSubtasks(all.filter((t) => t.parentTaskId === task.id)));
+  }, [task]);
+
+  const cancelTask = async () => {
+    if (!task) return;
+    setCancelling(true);
+    try {
+      await api.cancelTask(task.id);
+      refreshTask();
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   useEffect(() => {
     const latestRun = task?.runs.at(-1);
@@ -81,8 +101,35 @@ export function TaskDetailPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
           <p className="text-sm text-muted-foreground">{task.description}</p>
         </div>
-        <TaskStateBadge state={task.state} />
+        <div className="flex items-center gap-3">
+          <TaskStateBadge state={task.state} />
+          {!["Done", "Failed", "DeadLetter"].includes(task.state) && (
+            <Button size="sm" variant="destructive" onClick={cancelTask} disabled={cancelling}>
+              Cancel
+            </Button>
+          )}
+        </div>
       </div>
+
+      {subtasks.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Subtasks</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {subtasks.map((subtask) => (
+              <Link
+                key={subtask.id}
+                to={`/tasks/${subtask.id}`}
+                className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50"
+              >
+                <span>{subtask.title}</span>
+                <TaskStateBadge state={subtask.state} />
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {pendingApproval && (
         <Card className="border-amber-400">

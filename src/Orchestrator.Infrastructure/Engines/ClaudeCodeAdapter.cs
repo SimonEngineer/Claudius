@@ -172,7 +172,17 @@ public class ClaudeCodeAdapter(IProcessRunner processRunner, ILogger<ClaudeCodeA
 
             if (verdict == "pass")
             {
-                return new EngineResult(EngineOutcome.Succeeded, finalText, TokensIn: tokensIn, TokensOut: tokensOut, CostUsd: costUsd);
+                string? skillName = null, skillContent = null;
+                if (doc.RootElement.TryGetProperty("skill", out var skill) && skill.ValueKind == JsonValueKind.Object)
+                {
+                    skillName = skill.TryGetProperty("name", out var sn) ? sn.GetString() : null;
+                    skillContent = skill.TryGetProperty("content", out var sc) ? sc.GetString() : null;
+                }
+
+                return new EngineResult(
+                    EngineOutcome.Succeeded, finalText,
+                    TokensIn: tokensIn, TokensOut: tokensOut, CostUsd: costUsd,
+                    SkillName: skillName, SkillContent: skillContent);
             }
 
             // verdict == "fail" (or unrecognized): surface as needing a follow-up fix, carried
@@ -195,10 +205,12 @@ public class ClaudeCodeAdapter(IProcessRunner processRunner, ILogger<ClaudeCodeA
             $$"""
             You are the supervisor for an autonomous coding task. Break the following task into a
             concrete implementation plan for a cheaper local model to execute, and define acceptance
-            criteria that a later verification pass can check objectively.
+            criteria that a later verification pass can check objectively. If the task is genuinely
+            simple, a single-step plan is fine; only split into multiple steps when they are
+            independently executable and verifiable.
 
             Task: {{context.Instruction}}
-
+            {{ExistingSkillsSection(context)}}
             Respond with your reasoning, then end your message with a fenced json block of the form:
             ```json
             {"plan": ["step 1", "step 2"], "acceptanceCriteria": ["criterion 1", "criterion 2"]}
@@ -206,19 +218,22 @@ public class ClaudeCodeAdapter(IProcessRunner processRunner, ILogger<ClaudeCodeA
             """,
 
         EngineMode.Verify =>
-            $$"""
+            $$$"""
             You are the supervisor reviewing work done by a local model against acceptance criteria.
 
-            Original task: {{context.Instruction}}
-            Plan that was given to the worker: {{context.PlanJson}}
-            Acceptance criteria: {{context.AcceptanceCriteriaJson}}
+            Original task: {{{context.Instruction}}}
+            Plan that was given to the worker: {{{context.PlanJson}}}
+            Acceptance criteria: {{{context.AcceptanceCriteriaJson}}}
 
-            Inspect the current state of the repository at {{context.WorkingDirectory}} (read files,
+            Inspect the current state of the repository at {{{context.WorkingDirectory}}} (read files,
             run tests/build as appropriate) and decide whether the work satisfies the acceptance
-            criteria. End your message with a fenced json block of the form:
+            criteria.
+            {{{ExistingSkillsSection(context)}}}
+            End your message with a fenced json block of the form:
             ```json
-            {"verdict": "pass", "notes": "..."}
+            {"verdict": "pass", "notes": "...", "skill": {"name": "short-skill-name", "content": "reusable guidance for future similar tasks"}}
             ```
+            (the "skill" field is optional -- only include it when you learned something reusable)
             or, if it fails:
             ```json
             {"verdict": "fail", "notes": "...", "followUpInstruction": "concrete instruction for the worker to fix this"}
@@ -227,4 +242,9 @@ public class ClaudeCodeAdapter(IProcessRunner processRunner, ILogger<ClaudeCodeA
 
         _ => context.Instruction
     };
+
+    private static string ExistingSkillsSection(RunContext context) =>
+        context.ExistingSkillsJson is null
+            ? ""
+            : $"\nReusable skills from past tasks on this project (apply them if relevant): {context.ExistingSkillsJson}\n";
 }

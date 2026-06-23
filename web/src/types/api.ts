@@ -8,6 +8,7 @@ export type TaskState =
   | "Verifying"
   | "NeedsFix"
   | "AwaitingInput"
+  | "Decomposed"
   | "Done"
   | "Failed"
   | "DeadLetter";

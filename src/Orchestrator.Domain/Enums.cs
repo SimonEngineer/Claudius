@@ -21,6 +21,7 @@ public enum TaskState
     Verifying,
     NeedsFix,
     AwaitingInput,
+    Decomposed,
     Done,
     Failed,
     DeadLetter

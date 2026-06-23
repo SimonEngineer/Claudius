@@ -20,5 +20,6 @@ public record RunContext(
     string Instruction,
     string? PlanJson,
     string? AcceptanceCriteriaJson,
-    TimeSpan Timeout
+    TimeSpan Timeout,
+    string? ExistingSkillsJson = null
 );
