@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
+using NameTags.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,7 +15,15 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddDbContext<NameTagsDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("NameTagsDb")));
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<NameTagsDbContext>().Database.Migrate();
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

@@ -55,3 +55,44 @@ export const DEFAULT_GENERATION_PARAMS: Omit<TagGenerationParams, "text"> = {
   customSvgBytes: null,
   shapeParams: DEFAULT_SHAPE_PARAMS,
 }
+
+export interface TagName {
+  id: number
+  text: string
+  sortOrder: number
+}
+
+export interface ProjectSummary {
+  id: number
+  name: string
+  shapeType: ShapeType
+  nameCount: number
+  createdAt: string
+}
+
+export interface ProjectDetail {
+  id: number
+  name: string
+  shapeType: ShapeType
+  shapeParams: ShapeParams
+  customSvgBase64: string | null
+  fontFamilyOrPath: string
+  plateWidthMm: number
+  plateHeightMm: number
+  plateThicknessMm: number
+  textDepthMm: number
+  createdAt: string
+  names: TagName[]
+}
+
+export interface SaveProjectPayload {
+  name: string
+  shapeType: ShapeType
+  shapeParams: ShapeParams
+  customSvgBase64: string | null
+  fontFamilyOrPath: string
+  plateWidthMm: number
+  plateHeightMm: number
+  plateThicknessMm: number
+  textDepthMm: number
+}

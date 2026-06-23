@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using NameTags.Api.Dtos;
 using NameTags.Core.Export;
 using NameTags.Core.Outlines;
 using NameTags.Core.Pipeline;
@@ -16,12 +17,6 @@ namespace NameTags.Api.Controllers;
 public class ModelsController : ControllerBase
 {
     private readonly ModelGenerationService _generationService = new();
-
-    public sealed record ShapeParamsDto(
-        float CornerRadiusMm = 4f,
-        int StarPoints = 5,
-        float StarInnerRadiusRatio = 0.45f,
-        int CurveSegments = 48);
 
     public sealed record GenerateTagRequestDto(
         string Text,
@@ -43,7 +38,6 @@ public class ModelsController : ControllerBase
     private IActionResult GenerateStl(GenerateTagRequestDto dto, bool asAttachment)
     {
         var fontPath = ResolveFontPath(dto.FontFamilyOrPath);
-        var shapeParamsDto = dto.ShapeParams ?? new ShapeParamsDto();
         var request = new TagGenerationRequest
         {
             Text = dto.Text,
@@ -54,13 +48,7 @@ public class ModelsController : ControllerBase
             PlateThicknessMm = dto.PlateThicknessMm,
             TextDepthMm = dto.TextDepthMm,
             CustomSvgBytes = dto.CustomSvgBytes,
-            ShapeParams = new ShapeParams
-            {
-                CornerRadiusMm = shapeParamsDto.CornerRadiusMm,
-                StarPoints = shapeParamsDto.StarPoints,
-                StarInnerRadiusRatio = shapeParamsDto.StarInnerRadiusRatio,
-                CurveSegments = shapeParamsDto.CurveSegments,
-            },
+            ShapeParams = (dto.ShapeParams ?? new ShapeParamsDto()).ToShapeParams(),
         };
 
         var mesh = _generationService.GenerateTagMesh(request);
