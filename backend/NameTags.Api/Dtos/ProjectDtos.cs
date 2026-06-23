@@ -3,7 +3,9 @@ using NameTags.Data.Entities;
 
 namespace NameTags.Api.Dtos;
 
-public sealed record TagNameDto(int Id, string Text, int SortOrder);
+public sealed record TagNameDto(int Id, string Text, int SortOrder, float? TextDepthMmOverride);
+
+public sealed record UpdateNameOverrideDto(float? TextDepthMmOverride);
 
 public sealed record ProjectSummaryDto(int Id, string Name, ShapeType ShapeType, int NameCount, DateTime CreatedAt);
 
@@ -33,7 +35,9 @@ public sealed record ProjectDetailDto(
         p.PlateThicknessMm,
         p.TextDepthMm,
         p.CreatedAt,
-        p.Names.OrderBy(n => n.SortOrder).Select(n => new TagNameDto(n.Id, n.Text, n.SortOrder)).ToList());
+        p.Names.OrderBy(n => n.SortOrder)
+            .Select(n => new TagNameDto(n.Id, n.Text, n.SortOrder, n.TextDepthMmOverride))
+            .ToList());
 }
 
 public sealed record SaveProjectDto(

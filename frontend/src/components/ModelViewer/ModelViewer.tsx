@@ -1,4 +1,4 @@
-import { Suspense } from "react"
+import { Component, Suspense, type ReactNode } from "react"
 import { Canvas, useLoader } from "@react-three/fiber"
 import { OrbitControls, Center, Bounds } from "@react-three/drei"
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js"
@@ -21,6 +21,29 @@ function Loading() {
   )
 }
 
+interface ViewerErrorBoundaryState {
+  hasError: boolean
+}
+
+class ViewerErrorBoundary extends Component<{ children: ReactNode }, ViewerErrorBoundaryState> {
+  state: ViewerErrorBoundaryState = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-full w-full items-center justify-center text-sm text-destructive p-4 text-center">
+          Could not load model preview.
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 export interface ModelViewerProps {
   /** URL serving the STL bytes (e.g. a preview endpoint). */
   stlUrl: string
@@ -30,19 +53,21 @@ export interface ModelViewerProps {
 export function ModelViewer({ stlUrl, className }: ModelViewerProps) {
   return (
     <div className={className} style={{ width: "100%", height: "100%", minHeight: 320 }}>
-      <Canvas camera={{ position: [0, -80, 60], fov: 45 }} shadows>
-        <color attach="background" args={["#1c1d22"]} />
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[50, -50, 80]} intensity={1.2} castShadow />
-        <Suspense fallback={<Loading />}>
-          <Bounds fit clip observe margin={1.4}>
-            <Center>
-              <StlMesh url={stlUrl} />
-            </Center>
-          </Bounds>
-        </Suspense>
-        <OrbitControls makeDefault />
-      </Canvas>
+      <ViewerErrorBoundary key={stlUrl}>
+        <Canvas camera={{ position: [0, -80, 60], fov: 45 }} shadows>
+          <color attach="background" args={["#1c1d22"]} />
+          <ambientLight intensity={0.6} />
+          <directionalLight position={[50, -50, 80]} intensity={1.2} castShadow />
+          <Suspense fallback={<Loading />}>
+            <Bounds fit clip observe margin={1.4}>
+              <Center>
+                <StlMesh url={stlUrl} />
+              </Center>
+            </Bounds>
+          </Suspense>
+          <OrbitControls makeDefault />
+        </Canvas>
+      </ViewerErrorBoundary>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NameTags.Api.Dtos;
+using NameTags.Api.Validation;
 using NameTags.Core.Export;
 using NameTags.Core.Pipeline;
 using NameTags.Data;
@@ -73,13 +74,32 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         var project = await db.TagProjects.Include(p => p.Names).FirstOrDefaultAsync(p => p.Id == id);
         if (project is null) return NotFound();
 
+        foreach (var text in names)
+        {
+            var error = TagTextValidator.Validate(text);
+            if (error is not null) return BadRequest(new { error });
+        }
+
         db.TagNames.RemoveRange(project.Names);
         project.Names = names
             .Select((text, index) => new TagName { TagProjectId = id, Text = text, SortOrder = index })
             .ToList();
         await db.SaveChangesAsync();
 
-        return project.Names.Select(n => new TagNameDto(n.Id, n.Text, n.SortOrder)).ToList();
+        return project.Names.Select(n => new TagNameDto(n.Id, n.Text, n.SortOrder, n.TextDepthMmOverride)).ToList();
+    }
+
+    /// <summary>Sets per-name overrides (currently just text depth) on top of the project's shared params.</summary>
+    [HttpPut("{id:int}/names/{nameId:int}/override")]
+    public async Task<ActionResult<TagNameDto>> SetNameOverride(int id, int nameId, [FromBody] UpdateNameOverrideDto dto)
+    {
+        var name = await db.TagNames.FirstOrDefaultAsync(n => n.Id == nameId && n.TagProjectId == id);
+        if (name is null) return NotFound();
+
+        name.TextDepthMmOverride = dto.TextDepthMmOverride;
+        await db.SaveChangesAsync();
+
+        return new TagNameDto(name.Id, name.Text, name.SortOrder, name.TextDepthMmOverride);
     }
 
     [HttpGet("{id:int}/names/{nameId:int}/preview.stl")]
@@ -105,7 +125,7 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
             PlateWidthMm = project.PlateWidthMm,
             PlateHeightMm = project.PlateHeightMm,
             PlateThicknessMm = project.PlateThicknessMm,
-            TextDepthMm = project.TextDepthMm,
+            TextDepthMm = name.TextDepthMmOverride ?? project.TextDepthMm,
             CustomSvgBytes = project.CustomSvgBytes,
             ShapeParams = new ShapeParamsDto(
                 project.CornerRadiusMm, project.StarPoints, project.StarInnerRadiusRatio, project.CurveSegments

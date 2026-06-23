@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using NameTags.Api.Dtos;
+using NameTags.Api.Validation;
 using NameTags.Core.Export;
 using NameTags.Core.Outlines;
 using NameTags.Core.Pipeline;
@@ -37,6 +38,9 @@ public class ModelsController : ControllerBase
 
     private IActionResult GenerateStl(GenerateTagRequestDto dto, bool asAttachment)
     {
+        var textError = TagTextValidator.Validate(dto.Text);
+        if (textError is not null) return BadRequest(new { error = textError });
+
         var fontPath = ResolveFontPath(dto.FontFamilyOrPath);
         var request = new TagGenerationRequest
         {

@@ -7,4 +7,5 @@ public sealed class TagName
     public TagProject TagProject { get; set; } = null!;
     public string Text { get; set; } = "";
     public int SortOrder { get; set; }
+    public float? TextDepthMmOverride { get; set; }
 }

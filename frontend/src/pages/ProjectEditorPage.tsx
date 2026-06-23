@@ -7,8 +7,10 @@ import { NameListInput, namesFromText } from "@/components/NameListInput"
 import { ShapeSelector } from "@/components/ShapeSelector"
 import { ParamsPanel, type PlateParams } from "@/components/ParamsPanel"
 import { NameTagPreview } from "@/components/NameTagPreview"
+import { ProjectNamePreview } from "@/components/ProjectNamePreview"
+import { DownloadAllButton } from "@/components/DownloadAllButton"
 import { createProject, getProject, replaceNames, updateProject } from "@/api/projectsApi"
-import { DEFAULT_GENERATION_PARAMS, type ShapeParams, type ShapeType } from "@/types"
+import { DEFAULT_GENERATION_PARAMS, type ShapeParams, type ShapeType, type TagName } from "@/types"
 
 export function ProjectEditorPage() {
   const { id } = useParams<{ id: string }>()
@@ -30,6 +32,8 @@ export function ProjectEditorPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!isNew)
+  const [savedNames, setSavedNames] = useState<TagName[]>([])
+  const [savedProjectId, setSavedProjectId] = useState<number | null>(projectId)
 
   useEffect(() => {
     if (isNew || projectId === null) return
@@ -46,6 +50,8 @@ export function ProjectEditorPage() {
           textDepthMm: project.textDepthMm,
         })
         setShapeParams(project.shapeParams)
+        setSavedNames(project.names)
+        setSavedProjectId(project.id)
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load project"))
       .finally(() => setLoading(false))
@@ -66,8 +72,10 @@ export function ProjectEditorPage() {
         ...plateParams,
       }
       const saved = projectId === null ? await createProject(payload) : await updateProject(projectId, payload)
-      await replaceNames(saved.id, names)
-      navigate(`/projects/${saved.id}`)
+      const updatedNames = await replaceNames(saved.id, names)
+      setSavedNames(updatedNames)
+      setSavedProjectId(saved.id)
+      if (projectId === null) navigate(`/projects/${saved.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save project")
     } finally {
@@ -133,6 +141,27 @@ export function ProjectEditorPage() {
           )}
         </div>
       </div>
+
+      {savedProjectId !== null && savedNames.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Saved tags</h2>
+            <DownloadAllButton projectId={savedProjectId} projectName={projectName} names={savedNames} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {savedNames.map((name) => (
+              <ProjectNamePreview
+                key={name.id}
+                projectId={savedProjectId}
+                name={name}
+                onOverrideChange={(updated) =>
+                  setSavedNames((current) => current.map((n) => (n.id === updated.id ? updated : n)))
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

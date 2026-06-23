@@ -39,3 +39,30 @@ export async function deleteProject(id: number): Promise<void> {
 export function replaceNames(id: number, names: string[]): Promise<TagName[]> {
   return requestJson(`/api/projects/${id}/names`, { method: "PUT", body: JSON.stringify(names) })
 }
+
+export function setNameOverride(
+  projectId: number,
+  nameId: number,
+  textDepthMmOverride: number | null
+): Promise<TagName> {
+  return requestJson(`/api/projects/${projectId}/names/${nameId}/override`, {
+    method: "PUT",
+    body: JSON.stringify({ textDepthMmOverride }),
+  })
+}
+
+export function projectPreviewUrl(projectId: number, nameId: number): string {
+  return `${API_BASE}/api/projects/${projectId}/names/${nameId}/preview.stl`
+}
+
+export function projectDownloadUrl(projectId: number, nameId: number): string {
+  return `${API_BASE}/api/projects/${projectId}/names/${nameId}/download.stl`
+}
+
+export async function fetchProjectStlBlob(projectId: number, nameId: number): Promise<Blob> {
+  const response = await fetch(projectDownloadUrl(projectId, nameId))
+  if (!response.ok) {
+    throw new Error(`Download failed: ${response.status} ${await response.text()}`)
+  }
+  return response.blob()
+}

@@ -60,7 +60,10 @@ export interface TagName {
   id: number
   text: string
   sortOrder: number
+  textDepthMmOverride: number | null
 }
+
+export const MAX_NAME_TEXT_LENGTH = 40
 
 export interface ProjectSummary {
   id: number
