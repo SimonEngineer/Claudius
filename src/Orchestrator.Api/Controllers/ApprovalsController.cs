@@ -2,13 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Orchestrator.Api.Dtos;
 using Orchestrator.Domain;
+using Orchestrator.Domain.Streaming;
 using Orchestrator.Infrastructure.Persistence;
 
 namespace Orchestrator.Api.Controllers;
 
 [ApiController]
 [Route("api/approvals")]
-public class ApprovalsController(OrchestratorDbContext db) : ControllerBase
+public class ApprovalsController(OrchestratorDbContext db, IEventBroadcaster broadcaster) : ControllerBase
 {
     [HttpGet("pending")]
     public async Task<ActionResult<IEnumerable<Approval>>> ListPending(CancellationToken ct)
@@ -67,6 +68,10 @@ public class ApprovalsController(OrchestratorDbContext db) : ControllerBase
         task.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
+
+        await broadcaster.BroadcastApprovalResolvedAsync(task.Id, task.ProjectId, approval.Id, status, ct);
+        await broadcaster.BroadcastTaskStateChangedAsync(task.Id, task.ProjectId, task.State, ct);
+
         return NoContent();
     }
 }

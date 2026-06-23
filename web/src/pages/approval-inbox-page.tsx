@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useApprovalsStream } from "@/hooks/use-task-stream";
 import { api } from "@/lib/api";
 import type { Approval } from "@/types/api";
 
@@ -19,6 +20,11 @@ export function ApprovalInboxPage() {
   };
 
   useEffect(refresh, []);
+
+  useApprovalsStream(
+    () => refresh(),
+    () => refresh(),
+  );
 
   const resolve = async (id: string, action: "approve" | "reject") => {
     await (action === "approve" ? api.approve(id, {}) : api.reject(id, {}));

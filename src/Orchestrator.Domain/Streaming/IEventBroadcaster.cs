@@ -11,5 +11,7 @@ public interface IEventBroadcaster
 
     Task BroadcastTaskStateChangedAsync(Guid taskId, Guid projectId, TaskState newState, CancellationToken ct = default);
 
-    Task BroadcastApprovalRequestedAsync(Guid taskId, Approval approval, CancellationToken ct = default);
+    Task BroadcastApprovalRequestedAsync(Guid taskId, Guid projectId, Approval approval, CancellationToken ct = default);
+
+    Task BroadcastApprovalResolvedAsync(Guid taskId, Guid projectId, Guid approvalId, ApprovalStatus status, CancellationToken ct = default);
 }

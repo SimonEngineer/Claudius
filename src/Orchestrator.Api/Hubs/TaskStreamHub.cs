@@ -28,10 +28,22 @@ public class TaskStreamHub : Hub
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName.ForProject(projectId));
     }
+
+    /// <summary>Global group for the cross-project approval inbox -- it doesn't know task ids upfront.</summary>
+    public async Task SubscribeToApprovals()
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, GroupName.Approvals);
+    }
+
+    public async Task UnsubscribeFromApprovals()
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName.Approvals);
+    }
 }
 
 public static class GroupName
 {
     public static string ForTask(Guid taskId) => $"task-{taskId}";
     public static string ForProject(Guid projectId) => $"project-{projectId}";
+    public const string Approvals = "approvals";
 }

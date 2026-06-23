@@ -27,14 +27,24 @@ public class SignalREventBroadcaster(IHubContext<TaskStreamHub> hub) : IEventBro
         await hub.Clients.Group(GroupName.ForProject(projectId)).SendAsync("TaskStateChanged", payload, ct);
     }
 
-    public async Task BroadcastApprovalRequestedAsync(Guid taskId, Approval approval, CancellationToken ct = default)
+    public async Task BroadcastApprovalRequestedAsync(Guid taskId, Guid projectId, Approval approval, CancellationToken ct = default)
     {
-        await hub.Clients.Group(GroupName.ForTask(taskId)).SendAsync("ApprovalRequested", new
+        var payload = new
         {
             taskId,
+            projectId,
             approvalId = approval.Id,
             question = approval.Question,
             options = approval.OptionsJson
-        }, ct);
+        };
+        await hub.Clients.Group(GroupName.ForTask(taskId)).SendAsync("ApprovalRequested", payload, ct);
+        await hub.Clients.Group(GroupName.Approvals).SendAsync("ApprovalRequested", payload, ct);
+    }
+
+    public async Task BroadcastApprovalResolvedAsync(Guid taskId, Guid projectId, Guid approvalId, ApprovalStatus status, CancellationToken ct = default)
+    {
+        var payload = new { taskId, projectId, approvalId, status = status.ToString() };
+        await hub.Clients.Group(GroupName.ForTask(taskId)).SendAsync("ApprovalResolved", payload, ct);
+        await hub.Clients.Group(GroupName.Approvals).SendAsync("ApprovalResolved", payload, ct);
     }
 }

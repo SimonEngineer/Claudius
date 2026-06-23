@@ -131,14 +131,16 @@ public class TaskRunnerJob(
                 break;
 
             case EngineOutcome.NeedsInput when mode == EngineMode.Implement:
-                db.Approvals.Add(new Approval
+                var approval = new Approval
                 {
                     TaskId = task.Id,
                     RunId = run.Id,
                     Question = result.ApprovalQuestion ?? "The worker needs more information to proceed.",
                     OptionsJson = result.ApprovalOptions is null ? null : JsonSerializer.Serialize(result.ApprovalOptions)
-                });
+                };
+                db.Approvals.Add(approval);
                 task.State = TaskState.AwaitingInput;
+                await broadcaster.BroadcastApprovalRequestedAsync(task.Id, task.ProjectId, approval, ct);
                 break;
 
             case EngineOutcome.NeedsInput when mode == EngineMode.Verify:

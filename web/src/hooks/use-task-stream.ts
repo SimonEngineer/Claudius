@@ -7,7 +7,7 @@ import {
 } from "@microsoft/signalr";
 
 import { API_BASE_URL } from "@/lib/api";
-import type { LiveEvent, TaskState } from "@/types/api";
+import type { ApprovalStatus, LiveEvent, TaskState } from "@/types/api";
 
 let sharedConnection: HubConnection | null = null;
 
@@ -30,9 +30,17 @@ export interface TaskStateChangedEvent {
 
 export interface ApprovalRequestedEvent {
   taskId: string;
+  projectId: string;
   approvalId: string;
   question: string;
   options: string | null;
+}
+
+export interface ApprovalResolvedEvent {
+  taskId: string;
+  projectId: string;
+  approvalId: string;
+  status: ApprovalStatus;
 }
 
 export function useHubConnection() {
@@ -139,4 +147,34 @@ export function useProjectStream(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, state]);
+}
+
+export function useApprovalsStream(
+  onRequested?: (event: ApprovalRequestedEvent) => void,
+  onResolved?: (event: ApprovalResolvedEvent) => void,
+) {
+  const { connection, state } = useHubConnection();
+
+  useEffect(() => {
+    const requestedHandler = (event: ApprovalRequestedEvent) => onRequested?.(event);
+    const resolvedHandler = (event: ApprovalResolvedEvent) => onResolved?.(event);
+
+    connection.on("ApprovalRequested", requestedHandler);
+    connection.on("ApprovalResolved", resolvedHandler);
+
+    const subscribe = () => connection.invoke("SubscribeToApprovals").catch(() => {});
+    if (state === HubConnectionState.Connected) {
+      void subscribe();
+    }
+    connection.onreconnected(subscribe);
+
+    return () => {
+      connection.off("ApprovalRequested", requestedHandler);
+      connection.off("ApprovalResolved", resolvedHandler);
+      if (connection.state === HubConnectionState.Connected) {
+        connection.invoke("UnsubscribeFromApprovals").catch(() => {});
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 }
