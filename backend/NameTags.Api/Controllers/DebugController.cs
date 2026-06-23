@@ -1,7 +1,9 @@
 using System.Numerics;
 using Microsoft.AspNetCore.Mvc;
 using NameTags.Core.Export;
+using NameTags.Core.Extrusion;
 using NameTags.Core.Geometry;
+using NameTags.Core.Outlines;
 
 namespace NameTags.Api.Controllers;
 
@@ -18,6 +20,20 @@ public class DebugController : ControllerBase
         StlWriter.WriteBinary(stream, mesh);
         stream.Position = 0;
         return File(stream, "model/stl", "box.stl");
+    }
+
+    /// <summary>Returns a bare extruded plate for a given preset shape, to verify outline+triangulation+extrusion end-to-end.</summary>
+    [HttpGet("plate.stl")]
+    public IActionResult GetPlate([FromQuery] ShapeType shape = ShapeType.RoundedRectangle)
+    {
+        var provider = ShapeOutlineProviderFactory.Resolve(shape);
+        var outline = provider.GetOutline(new ShapeParams(), targetWidthMm: 60, targetHeightMm: 30);
+        var mesh = MeshExtruder.Extrude(outline, zBottom: 0, zTop: 3);
+
+        var stream = new MemoryStream();
+        StlWriter.WriteBinary(stream, mesh);
+        stream.Position = 0;
+        return File(stream, "model/stl", $"plate-{shape}.stl");
     }
 
     private static Mesh3D BuildBox(Vector3 size)
