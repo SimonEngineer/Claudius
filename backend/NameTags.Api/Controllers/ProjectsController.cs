@@ -133,6 +133,7 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
             TextMarginBottomMm = project.TextMarginBottomMm,
             TextHorizontalAlign = project.TextHorizontalAlign,
             TextVerticalAlign = project.TextVerticalAlign,
+            BevelMm = project.BevelMm,
             CustomSvgBytes = project.CustomSvgBytes,
             ShapeParams = new ShapeParamsDto(
                 project.CornerRadiusMm, project.StarPoints, project.StarInnerRadiusRatio, project.CurveSegments
@@ -171,6 +172,7 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         project.TextMarginBottomMm = dto.TextMarginBottomMm;
         project.TextHorizontalAlign = dto.TextHorizontalAlign;
         project.TextVerticalAlign = dto.TextVerticalAlign;
+        project.BevelMm = dto.BevelMm;
         project.MountingHoles = (dto.MountingHoles ?? new List<SaveMountingHoleDto>())
             .Select(h => new TagMountingHole { OffsetXMm = h.OffsetXMm, OffsetYMm = h.OffsetYMm, DiameterMm = h.DiameterMm })
             .ToList();

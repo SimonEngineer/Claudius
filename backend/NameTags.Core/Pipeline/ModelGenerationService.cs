@@ -24,11 +24,21 @@ public sealed class ModelGenerationService
     public Mesh3D GenerateTagMesh(TagGenerationRequest request)
     {
         var plateOutline = GetPlateOutline(request);
+        float bevel = ClampBevel(request);
+        var insetOutline = bevel > 0f
+            ? GetPlateOutline(request, request.PlateWidthMm - 2f * bevel, request.PlateHeightMm - 2f * bevel)
+            : null;
+
         foreach (var hole in request.MountingHoles)
         {
-            plateOutline = plateOutline.WithHoleCircle(new Vector2(hole.OffsetXMm, hole.OffsetYMm), hole.DiameterMm / 2f);
+            var center = new Vector2(hole.OffsetXMm, hole.OffsetYMm);
+            plateOutline = plateOutline.WithHoleCircle(center, hole.DiameterMm / 2f);
+            insetOutline = insetOutline?.WithHoleCircle(center, hole.DiameterMm / 2f);
         }
-        var plateMesh = MeshExtruder.Extrude(plateOutline, zBottom: 0f, zTop: request.PlateThicknessMm);
+
+        var plateMesh = insetOutline is null
+            ? MeshExtruder.Extrude(plateOutline, zBottom: 0f, zTop: request.PlateThicknessMm)
+            : MeshExtruder.ExtrudeWithTopBevel(plateOutline, insetOutline, zBottom: 0f, zBevelStart: request.PlateThicknessMm - bevel, zTop: request.PlateThicknessMm);
 
         var availableWidth = Math.Max(1f, request.PlateWidthMm - request.TextMarginLeftMm - request.TextMarginRightMm);
         var availableHeight = Math.Max(1f, request.PlateHeightMm - request.TextMarginTopMm - request.TextMarginBottomMm);
@@ -116,7 +126,10 @@ public sealed class ModelGenerationService
         return true;
     }
 
-    private static Polygon2D GetPlateOutline(TagGenerationRequest request)
+    private static Polygon2D GetPlateOutline(TagGenerationRequest request) =>
+        GetPlateOutline(request, request.PlateWidthMm, request.PlateHeightMm);
+
+    private static Polygon2D GetPlateOutline(TagGenerationRequest request, float width, float height)
     {
         if (request.ShapeType == ShapeType.CustomSvg)
         {
@@ -124,10 +137,25 @@ public sealed class ModelGenerationService
             {
                 throw new InvalidOperationException("CustomSvgBytes is required when ShapeType is CustomSvg.");
             }
-            return SvgOutlineParser.Parse(request.CustomSvgBytes, request.PlateWidthMm, request.PlateHeightMm);
+            return SvgOutlineParser.Parse(request.CustomSvgBytes, width, height);
         }
 
         var provider = ShapeOutlineProviderFactory.Resolve(request.ShapeType);
-        return provider.GetOutline(request.ShapeParams, request.PlateWidthMm, request.PlateHeightMm);
+        return provider.GetOutline(request.ShapeParams, width, height);
+    }
+
+    /// <summary>
+    /// Clamps the requested bevel so the inset footprint never collapses to zero/negative and
+    /// never exceeds the plate's own thickness. Returns 0 (no bevel) for CustomSvg shapes,
+    /// since re-fitting raw SVG geometry to a smaller box would not preserve the tapered
+    /// ring's required point-for-point topology match.
+    /// </summary>
+    private static float ClampBevel(TagGenerationRequest request)
+    {
+        if (request.BevelMm <= 0f || request.ShapeType == ShapeType.CustomSvg) return 0f;
+
+        float maxByFootprint = Math.Min(request.PlateWidthMm, request.PlateHeightMm) / 2f * 0.95f;
+        float maxByThickness = request.PlateThicknessMm;
+        return Math.Clamp(request.BevelMm, 0f, Math.Min(maxByFootprint, maxByThickness));
     }
 }

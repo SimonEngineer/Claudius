@@ -34,6 +34,7 @@ public sealed record ProjectDetailDto(
     float TextMarginBottomMm,
     TextHorizontalAlign TextHorizontalAlign,
     TextVerticalAlign TextVerticalAlign,
+    float BevelMm,
     DateTime CreatedAt,
     List<TagNameDto> Names,
     List<MountingHoleDto> MountingHoles)
@@ -55,6 +56,7 @@ public sealed record ProjectDetailDto(
         p.TextMarginBottomMm,
         p.TextHorizontalAlign,
         p.TextVerticalAlign,
+        p.BevelMm,
         p.CreatedAt,
         p.Names.OrderBy(n => n.SortOrder)
             .Select(n => new TagNameDto(n.Id, n.Text, n.SortOrder, n.TextDepthMmOverride))
@@ -78,4 +80,5 @@ public sealed record SaveProjectDto(
     float TextMarginBottomMm = 5f,
     TextHorizontalAlign TextHorizontalAlign = TextHorizontalAlign.Center,
     TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center,
+    float BevelMm = 0f,
     List<SaveMountingHoleDto>? MountingHoles = null);

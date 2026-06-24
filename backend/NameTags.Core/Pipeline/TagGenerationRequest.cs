@@ -34,4 +34,12 @@ public sealed record TagGenerationRequest
 
     /// <summary>Circular through-holes punched in the plate, e.g. for a lanyard or wall mount.</summary>
     public List<MountingHole> MountingHoles { get; init; } = new();
+
+    /// <summary>
+    /// Height of a tapered chamfer cut into the plate's top edge, sloping inward from the
+    /// full footprint at the bevel's base to a smaller footprint at the top face. Ignored
+    /// for CustomSvg shapes (re-fitting raw SVG geometry to a smaller box would not preserve
+    /// the point-for-point topology the bevel's tapered ring relies on).
+    /// </summary>
+    public float BevelMm { get; init; } = 0f;
 }

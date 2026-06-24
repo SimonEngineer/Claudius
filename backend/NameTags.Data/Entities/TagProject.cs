@@ -34,6 +34,8 @@ public sealed class TagProject
     public TextHorizontalAlign TextHorizontalAlign { get; set; } = TextHorizontalAlign.Center;
     public TextVerticalAlign TextVerticalAlign { get; set; } = TextVerticalAlign.Center;
 
+    public float BevelMm { get; set; } = 0f;
+
     public List<TagName> Names { get; set; } = new();
     public List<TagMountingHole> MountingHoles { get; set; } = new();
 }

@@ -36,6 +36,7 @@ public class ModelsController : ControllerBase
         float TextMarginBottomMm = 5f,
         TextHorizontalAlign TextHorizontalAlign = TextHorizontalAlign.Center,
         TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center,
+        float BevelMm = 0f,
         List<MountingHole>? MountingHoles = null);
 
     [HttpPost("preview.stl")]
@@ -65,6 +66,7 @@ public class ModelsController : ControllerBase
             TextMarginBottomMm = dto.TextMarginBottomMm,
             TextHorizontalAlign = dto.TextHorizontalAlign,
             TextVerticalAlign = dto.TextVerticalAlign,
+            BevelMm = dto.BevelMm,
             CustomSvgBytes = dto.CustomSvgBytes,
             ShapeParams = (dto.ShapeParams ?? new ShapeParamsDto()).ToShapeParams(),
             MountingHoles = dto.MountingHoles ?? new List<MountingHole>(),

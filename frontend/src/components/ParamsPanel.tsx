@@ -13,6 +13,7 @@ export interface PlateParams {
   textMarginBottomMm: number
   textHorizontalAlign: TextHorizontalAlign
   textVerticalAlign: TextVerticalAlign
+  bevelMm: number
 }
 
 const HORIZONTAL_ALIGNS: TextHorizontalAlign[] = ["Left", "Center", "Right"]
@@ -32,12 +33,14 @@ function NumberField({
   value,
   onChange,
   step = 1,
+  disabled = false,
 }: {
   id: string
   label: string
   value: number
   onChange: (value: number) => void
   step?: number
+  disabled?: boolean
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -47,6 +50,7 @@ function NumberField({
         type="number"
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(e) => {
           const next = e.target.valueAsNumber
           if (!Number.isNaN(next)) onChange(next)
@@ -185,6 +189,15 @@ export function ParamsPanel({
           step={0.5}
         />
       )}
+
+      <NumberField
+        id="bevel"
+        label={shapeType === "CustomSvg" ? "Bevel (mm) — unsupported for custom SVG" : "Bevel (mm)"}
+        value={plateParams.bevelMm}
+        onChange={(v) => onPlateParamsChange({ ...plateParams, bevelMm: v })}
+        step={0.5}
+        disabled={shapeType === "CustomSvg"}
+      />
 
       {shapeType === "Star" && (
         <div className="grid grid-cols-2 gap-3">

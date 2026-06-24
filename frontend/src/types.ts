@@ -56,6 +56,7 @@ export interface TagGenerationParams {
   textMarginBottomMm: number
   textHorizontalAlign: TextHorizontalAlign
   textVerticalAlign: TextVerticalAlign
+  bevelMm: number
   fontFamilyOrPath: string
   customSvgBytes?: string | null
   shapeParams: ShapeParams
@@ -74,6 +75,7 @@ export const DEFAULT_GENERATION_PARAMS: Omit<TagGenerationParams, "text"> = {
   textMarginBottomMm: 5,
   textHorizontalAlign: "Center",
   textVerticalAlign: "Center",
+  bevelMm: 0,
   fontFamilyOrPath: "DejaVuSans-Bold.ttf",
   customSvgBytes: null,
   shapeParams: DEFAULT_SHAPE_PARAMS,
@@ -114,6 +116,7 @@ export interface ProjectDetail {
   textMarginBottomMm: number
   textHorizontalAlign: TextHorizontalAlign
   textVerticalAlign: TextVerticalAlign
+  bevelMm: number
   createdAt: string
   names: TagName[]
   mountingHoles: MountingHole[]
@@ -135,5 +138,6 @@ export interface SaveProjectPayload {
   textMarginBottomMm: number
   textHorizontalAlign: TextHorizontalAlign
   textVerticalAlign: TextVerticalAlign
+  bevelMm: number
   mountingHoles: MountingHole[]
 }

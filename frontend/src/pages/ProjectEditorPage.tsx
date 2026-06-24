@@ -34,6 +34,7 @@ export function ProjectEditorPage() {
     textMarginBottomMm: DEFAULT_GENERATION_PARAMS.textMarginBottomMm,
     textHorizontalAlign: DEFAULT_GENERATION_PARAMS.textHorizontalAlign,
     textVerticalAlign: DEFAULT_GENERATION_PARAMS.textVerticalAlign,
+    bevelMm: DEFAULT_GENERATION_PARAMS.bevelMm,
   })
   const [shapeParams, setShapeParams] = useState<ShapeParams>(DEFAULT_GENERATION_PARAMS.shapeParams)
   const [mountingHoles, setMountingHoles] = useState<MountingHole[]>(DEFAULT_GENERATION_PARAMS.mountingHoles)
@@ -62,6 +63,7 @@ export function ProjectEditorPage() {
           textMarginBottomMm: project.textMarginBottomMm,
           textHorizontalAlign: project.textHorizontalAlign,
           textVerticalAlign: project.textVerticalAlign,
+          bevelMm: project.bevelMm,
         })
         setShapeParams(project.shapeParams)
         setMountingHoles(project.mountingHoles)
