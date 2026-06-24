@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ModelViewer } from "@/components/ModelViewer/ModelViewer"
-import { projectDownloadUrl, projectPreviewUrl, setNameOverride } from "@/api/projectsApi"
+import { projectDownloadUrl, projectPackUrl, projectPreviewUrl, setNameOverride } from "@/api/projectsApi"
 import type { TagName } from "@/types"
 
 export interface ProjectNamePreviewProps {
@@ -69,10 +69,15 @@ export function ProjectNamePreview({ projectId, name, onOverrideChange }: Projec
           </Button>
         </div>
       </CardContent>
-      <CardFooter>
+      <CardFooter className="flex gap-2">
         <Button asChild size="sm">
           <a href={projectDownloadUrl(projectId, name.id)} download={`${name.text}.stl`}>
             Download STL
+          </a>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <a href={projectPackUrl(projectId, name.id)} download={`${name.text}-pack.stl`}>
+            Download pack (3-in-1)
           </a>
         </Button>
       </CardFooter>

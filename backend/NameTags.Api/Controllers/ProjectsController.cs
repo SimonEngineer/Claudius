@@ -154,6 +154,58 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         return new EmptyResult();
     }
 
+    /// <summary>
+    /// One pre-arranged STL per name: the project's standing tag plus a wine-glass charm and
+    /// a clothes clip, laid out side by side flat on the bed -- drag this straight into a
+    /// slicer with nothing left to rearrange.
+    /// </summary>
+    [HttpGet("{id:int}/names/{nameId:int}/pack.stl")]
+    public async Task<IActionResult> DownloadPack(int id, int nameId)
+    {
+        var project = await db.TagProjects.Include(p => p.Names).Include(p => p.MountingHoles).FirstOrDefaultAsync(p => p.Id == id);
+        if (project is null) return NotFound();
+
+        var name = project.Names.FirstOrDefault(n => n.Id == nameId);
+        if (name is null) return NotFound();
+
+        var mesh = PackGenerationService.BuildPackMesh(_generationService, BuildRequest(project, name));
+        var stream = new MemoryStream();
+        StlWriter.WriteBinary(stream, mesh);
+        stream.Position = 0;
+
+        return File(stream, "model/stl", $"{SanitizeFileName(name.Text)}-pack.stl");
+    }
+
+    /// <summary>Same streaming-zip pattern as ExportZip, but each entry is a full 3-variant pack.</summary>
+    [HttpGet("{id:int}/packs.zip")]
+    public async Task<IActionResult> ExportPacksZip(int id)
+    {
+        var project = await db.TagProjects.Include(p => p.Names).Include(p => p.MountingHoles).FirstOrDefaultAsync(p => p.Id == id);
+        if (project is null) return NotFound();
+        if (project.Names.Count == 0) return NotFound();
+
+        Response.ContentType = "application/zip";
+        Response.Headers.ContentDisposition = $"attachment; filename=\"{SanitizeFileName(project.Name)}-packs.zip\"";
+
+        using var archive = new ZipArchive(Response.BodyWriter.AsStream(), ZipArchiveMode.Create);
+        var usedFileNames = new HashSet<string>();
+        foreach (var name in project.Names)
+        {
+            var fileName = $"{SanitizeFileName(name.Text)}-pack.stl";
+            while (!usedFileNames.Add(fileName))
+            {
+                fileName = $"{SanitizeFileName(name.Text)}-pack-{name.Id}.stl";
+            }
+
+            var entry = archive.CreateEntry(fileName, CompressionLevel.Fastest);
+            await using var entryStream = entry.Open();
+            var mesh = PackGenerationService.BuildPackMesh(_generationService, BuildRequest(project, name));
+            StlWriter.WriteBinary(entryStream, mesh);
+        }
+
+        return new EmptyResult();
+    }
+
     private async Task<IActionResult> GenerateStl(int id, int nameId, bool asAttachment)
     {
         var project = await db.TagProjects.Include(p => p.Names).Include(p => p.MountingHoles).FirstOrDefaultAsync(p => p.Id == id);

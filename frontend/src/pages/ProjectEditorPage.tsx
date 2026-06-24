@@ -10,6 +10,7 @@ import { MountingHolesPanel } from "@/components/MountingHolesPanel"
 import { NameTagPreview } from "@/components/NameTagPreview"
 import { ProjectNamePreview } from "@/components/ProjectNamePreview"
 import { DownloadAllButton } from "@/components/DownloadAllButton"
+import { DownloadAllPacksButton } from "@/components/DownloadAllPacksButton"
 import { createProject, getProject, replaceNames, updateProject } from "@/api/projectsApi"
 import { DEFAULT_GENERATION_PARAMS, type MountingHole, type ShapeParams, type ShapeType, type TagName } from "@/types"
 
@@ -166,7 +167,10 @@ export function ProjectEditorPage() {
         <div className="mt-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Saved tags</h2>
-            <DownloadAllButton projectId={savedProjectId} projectName={projectName} names={savedNames} />
+            <div className="flex gap-2">
+              <DownloadAllButton projectId={savedProjectId} projectName={projectName} names={savedNames} />
+              <DownloadAllPacksButton projectId={savedProjectId} projectName={projectName} names={savedNames} />
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {savedNames.map((name) => (

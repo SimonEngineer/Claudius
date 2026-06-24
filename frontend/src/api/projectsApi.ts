@@ -71,3 +71,13 @@ export function projectExportZipUrl(projectId: number, nameIds?: number[]): stri
   const query = nameIds && nameIds.length > 0 ? `?nameIds=${nameIds.join(",")}` : ""
   return `${API_BASE}/api/projects/${projectId}/export.zip${query}`
 }
+
+/** A pre-arranged STL with all 3 tag variants (standing, wine-glass charm, clothes clip) for one name. */
+export function projectPackUrl(projectId: number, nameId: number): string {
+  return `${API_BASE}/api/projects/${projectId}/names/${nameId}/pack.stl`
+}
+
+/** Zip of one pre-arranged 3-variant pack STL per name in the project. */
+export function projectPacksZipUrl(projectId: number): string {
+  return `${API_BASE}/api/projects/${projectId}/packs.zip`
+}
