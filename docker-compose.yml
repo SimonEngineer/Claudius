@@ -64,6 +64,12 @@ services:
       ConnectionStrings__Orchestrator: "Host=postgres;Port=5432;Database=orchestrator;Username=orchestrator;Password=orchestrator"
       ANTHROPIC_BASE_URL: "http://litellm:4000"
       AIDER_OPENAI_API_BASE: "http://litellm:4000"
+      # Discord integration -- optional. Set DISCORD_ENABLED=true and DISCORD_BOT_TOKEN (and
+      # DISCORD_NOTIFY_CHANNEL_ID) to get notifications when a task needs approval/attention and
+      # to enable the "!status" command. See README for bot setup.
+      Discord__Enabled: ${DISCORD_ENABLED:-false}
+      Discord__BotToken: ${DISCORD_BOT_TOKEN:-}
+      Discord__NotifyChannelId: ${DISCORD_NOTIFY_CHANNEL_ID:-0}
     depends_on:
       postgres:
         condition: service_healthy

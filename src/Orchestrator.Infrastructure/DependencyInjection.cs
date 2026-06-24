@@ -3,6 +3,8 @@ using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Orchestrator.Infrastructure.Discord;
 using Orchestrator.Infrastructure.Engines;
 using Orchestrator.Infrastructure.Persistence;
 using Orchestrator.Infrastructure.Scheduling;
@@ -25,6 +27,7 @@ public static class DependencyInjection
             .UsePostgreSqlStorage(c => c.UseNpgsqlConnection(connectionString)));
 
         services.Configure<SchedulerOptions>(configuration.GetSection(SchedulerOptions.SectionName));
+        services.Configure<DiscordOptions>(configuration.GetSection(DiscordOptions.SectionName));
 
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<GitWorktreeService>();
@@ -35,6 +38,13 @@ public static class DependencyInjection
         services.AddScoped<TaskRunnerJob>();
         services.AddScoped<SchedulerTickJob>();
         services.AddHostedService<SchedulerTickHostedService>();
+
+        // Singleton because it owns the one persistent Discord gateway connection; registered
+        // both as itself (so DiscordEventBroadcaster can call SendNotificationAsync) and as the
+        // hosted service that drives it, sharing the same instance.
+        services.AddSingleton<DiscordBotService>();
+        services.AddHostedService<DiscordBotService>(sp => sp.GetRequiredService<DiscordBotService>());
+        services.AddScoped<DiscordEventBroadcaster>();
 
         return services;
     }

@@ -41,6 +41,9 @@ the full design rationale.
 - All model calls are routed through a [LiteLLM](https://www.litellm.ai/) gateway so
   local and cloud models share one OpenAI/Anthropic-compatible endpoint, with
   per-provider timeouts (local calls can legitimately take tens of minutes).
+- **Discord (optional)**: a bot posts to a channel whenever a task needs your input
+  (approval) or attention (failed/dead-lettered), and answers a `!status` message with
+  the current state of all projects/tasks/approvals. See [Discord integration](#discord-integration).
 
 ## Stack
 
@@ -174,3 +177,51 @@ Note: Claude Code's tool-calling format is tuned for genuine Claude models, so s
 local models may be less reliable in the supervisor role (which reads files during
 `Verify`) than in the worker role — prefer a capable (32B+ class) local model for
 `supervisorModel`.
+
+## Discord integration
+
+Optional. When enabled, the API maintains a persistent Discord bot connection that:
+
+- posts a notification to a configured channel whenever a task needs your input
+  (a new `Approval`) or attention (a task lands in `Failed`/`DeadLetter`), and
+- replies to a `!status` message typed in any channel the bot can read with an embed
+  summarizing project count, task counts by state, pending approvals, and in-progress
+  tasks.
+
+It's a no-op (nothing connects, no background work happens) unless `Discord:Enabled`
+is `true` and `Discord:BotToken` is set.
+
+### 1. Create the bot
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) →
+   New Application → **Bot** tab → copy the bot token.
+2. Under **Privileged Gateway Intents**, enable **Message Content Intent** (required to
+   read the `!status` command).
+3. Under **OAuth2 → URL Generator**, select the `bot` scope and the `Send Messages` +
+   `Read Message History` permissions, then open the generated URL to invite the bot to
+   your server.
+4. Enable Developer Mode in Discord (User Settings → Advanced), right-click the channel
+   you want notifications in, and **Copy Channel ID**.
+
+### 2. Configure it
+
+Set via environment (Docker Compose) or `appsettings.json`/user secrets (running the
+API directly):
+
+```bash
+export Discord__Enabled=true
+export Discord__BotToken="<bot token>"
+export Discord__NotifyChannelId=<channel id>
+```
+
+Or, for `docker compose`:
+
+```bash
+export DISCORD_ENABLED=true
+export DISCORD_BOT_TOKEN="<bot token>"
+export DISCORD_NOTIFY_CHANNEL_ID=<channel id>
+docker compose up --build
+```
+
+`!status` works in any channel the bot can read, regardless of `NotifyChannelId` —
+that setting only controls where proactive approval/attention notifications are posted.

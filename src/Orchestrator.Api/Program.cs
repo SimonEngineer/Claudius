@@ -7,6 +7,7 @@ using Orchestrator.Api.Hubs;
 using Orchestrator.Api.Streaming;
 using Orchestrator.Domain.Streaming;
 using Orchestrator.Infrastructure;
+using Orchestrator.Infrastructure.Discord;
 using Orchestrator.Infrastructure.Persistence;
 using Orchestrator.Infrastructure.Scheduling;
 using Serilog;
@@ -32,7 +33,15 @@ builder.Services.AddCors(options => options.AddPolicy("Dashboard", policy => pol
     .AllowCredentials()));
 
 builder.Services.AddOrchestratorInfrastructure(builder.Configuration);
-builder.Services.AddScoped<IEventBroadcaster, SignalREventBroadcaster>();
+
+// Fan every broadcast out to SignalR (live dashboard) and Discord (approval/attention
+// notifications + "!status"); both sinks are resolved from the same scope so Discord's DB
+// lookups share the request's/job's DbContext.
+builder.Services.AddScoped<SignalREventBroadcaster>();
+builder.Services.AddScoped<IEventBroadcaster>(sp => new CompositeEventBroadcaster([
+    sp.GetRequiredService<SignalREventBroadcaster>(),
+    sp.GetRequiredService<DiscordEventBroadcaster>()
+]));
 
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(r => r.AddService("orchestrator-api"))
