@@ -82,6 +82,30 @@ export const DEFAULT_GENERATION_PARAMS: Omit<TagGenerationParams, "text"> = {
   mountingHoles: [],
 }
 
+export interface PackSettings {
+  charmPlateWidthMm: number
+  charmPlateHeightMm: number
+  charmHookOuterRadiusMm: number
+  charmHookBandThicknessMm: number
+  clipPlateWidthMm: number
+  clipPlateHeightMm: number
+  clipArmLengthMm: number
+  clipGapMm: number
+  clipArmThicknessMm: number
+}
+
+export const DEFAULT_PACK_SETTINGS: PackSettings = {
+  charmPlateWidthMm: 28,
+  charmPlateHeightMm: 13,
+  charmHookOuterRadiusMm: 6,
+  charmHookBandThicknessMm: 1.8,
+  clipPlateWidthMm: 55,
+  clipPlateHeightMm: 22,
+  clipArmLengthMm: 20,
+  clipGapMm: 2.4,
+  clipArmThicknessMm: 1.2,
+}
+
 export interface TagName {
   id: number
   text: string
@@ -121,6 +145,7 @@ export interface ProjectDetail {
   names: TagName[]
   mountingHoles: MountingHole[]
 }
+export interface ProjectDetail extends PackSettings {}
 
 export interface SaveProjectPayload {
   name: string
@@ -141,3 +166,4 @@ export interface SaveProjectPayload {
   bevelMm: number
   mountingHoles: MountingHole[]
 }
+export interface SaveProjectPayload extends PackSettings {}

@@ -13,11 +13,22 @@ public static class PackGenerationService
 {
     private const float LayoutGapMm = 6f;
 
-    public static Mesh3D BuildPackMesh(ModelGenerationService modelService, TagGenerationRequest standingRequest)
+    public static Mesh3D BuildPackMesh(
+        ModelGenerationService modelService,
+        TagGenerationRequest standingRequest,
+        PackSettings? settings = null)
     {
+        settings ??= PackSettings.Default;
+
         var standingMesh = modelService.GenerateTagMesh(standingRequest);
-        var charmMesh = WineGlassCharmBuilder.Build(modelService, standingRequest.Text, standingRequest.FontFamilyOrPath);
-        var clipMesh = ClothesClipBuilder.Build(modelService, standingRequest.Text, standingRequest.FontFamilyOrPath);
+        var charmMesh = WineGlassCharmBuilder.Build(
+            modelService, standingRequest.Text, standingRequest.FontFamilyOrPath,
+            settings.CharmPlateWidthMm, settings.CharmPlateHeightMm,
+            settings.CharmHookOuterRadiusMm, settings.CharmHookBandThicknessMm);
+        var clipMesh = ClothesClipBuilder.Build(
+            modelService, standingRequest.Text, standingRequest.FontFamilyOrPath,
+            settings.ClipPlateWidthMm, settings.ClipPlateHeightMm,
+            settings.ClipArmLengthMm, settings.ClipGapMm, settings.ClipArmThicknessMm);
 
         var meshes = new[] { standingMesh, charmMesh, clipMesh };
         var positioned = new Mesh3D[meshes.Length];

@@ -7,12 +7,21 @@ import { NameListInput, namesFromText } from "@/components/NameListInput"
 import { ShapeSelector } from "@/components/ShapeSelector"
 import { ParamsPanel, type PlateParams } from "@/components/ParamsPanel"
 import { MountingHolesPanel } from "@/components/MountingHolesPanel"
+import { PackSettingsPanel } from "@/components/PackSettingsPanel"
 import { NameTagPreview } from "@/components/NameTagPreview"
 import { ProjectNamePreview } from "@/components/ProjectNamePreview"
 import { DownloadAllButton } from "@/components/DownloadAllButton"
 import { DownloadAllPacksButton } from "@/components/DownloadAllPacksButton"
 import { createProject, getProject, replaceNames, updateProject } from "@/api/projectsApi"
-import { DEFAULT_GENERATION_PARAMS, type MountingHole, type ShapeParams, type ShapeType, type TagName } from "@/types"
+import {
+  DEFAULT_GENERATION_PARAMS,
+  DEFAULT_PACK_SETTINGS,
+  type MountingHole,
+  type PackSettings,
+  type ShapeParams,
+  type ShapeType,
+  type TagName,
+} from "@/types"
 
 export function ProjectEditorPage() {
   const { id } = useParams<{ id: string }>()
@@ -39,6 +48,7 @@ export function ProjectEditorPage() {
   })
   const [shapeParams, setShapeParams] = useState<ShapeParams>(DEFAULT_GENERATION_PARAMS.shapeParams)
   const [mountingHoles, setMountingHoles] = useState<MountingHole[]>(DEFAULT_GENERATION_PARAMS.mountingHoles)
+  const [packSettings, setPackSettings] = useState<PackSettings>(DEFAULT_PACK_SETTINGS)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!isNew)
@@ -68,6 +78,17 @@ export function ProjectEditorPage() {
         })
         setShapeParams(project.shapeParams)
         setMountingHoles(project.mountingHoles)
+        setPackSettings({
+          charmPlateWidthMm: project.charmPlateWidthMm,
+          charmPlateHeightMm: project.charmPlateHeightMm,
+          charmHookOuterRadiusMm: project.charmHookOuterRadiusMm,
+          charmHookBandThicknessMm: project.charmHookBandThicknessMm,
+          clipPlateWidthMm: project.clipPlateWidthMm,
+          clipPlateHeightMm: project.clipPlateHeightMm,
+          clipArmLengthMm: project.clipArmLengthMm,
+          clipGapMm: project.clipGapMm,
+          clipArmThicknessMm: project.clipArmThicknessMm,
+        })
         setSavedNames(project.names)
         setSavedProjectId(project.id)
       })
@@ -89,6 +110,7 @@ export function ProjectEditorPage() {
         fontFamilyOrPath: DEFAULT_GENERATION_PARAMS.fontFamilyOrPath,
         mountingHoles,
         ...plateParams,
+        ...packSettings,
       }
       const saved = projectId === null ? await createProject(payload) : await updateProject(projectId, payload)
       const updatedNames = await replaceNames(saved.id, names)
@@ -140,6 +162,7 @@ export function ProjectEditorPage() {
             onShapeParamsChange={setShapeParams}
           />
           <MountingHolesPanel holes={mountingHoles} onChange={setMountingHoles} />
+          <PackSettingsPanel value={packSettings} onChange={setPackSettings} />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">

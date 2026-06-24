@@ -18,11 +18,18 @@ public static class WineGlassCharmBuilder
     public const float PlateThicknessMm = 2f;
     public const float TextDepthMm = 1f;
 
-    private const float HookOuterRadiusMm = 6f;
-    private const float HookBandThicknessMm = 1.8f;
+    public const float HookOuterRadiusMm = 6f;
+    public const float HookBandThicknessMm = 1.8f;
     private const float HookOverlapMm = 2f;
 
-    public static Mesh3D Build(ModelGenerationService modelService, string text, string fontFamilyOrPath)
+    public static Mesh3D Build(
+        ModelGenerationService modelService,
+        string text,
+        string fontFamilyOrPath,
+        float plateWidthMm = PlateWidthMm,
+        float plateHeightMm = PlateHeightMm,
+        float hookOuterRadiusMm = HookOuterRadiusMm,
+        float hookBandThicknessMm = HookBandThicknessMm)
     {
         var plateRequest = new TagGenerationRequest
         {
@@ -30,8 +37,8 @@ public static class WineGlassCharmBuilder
             FontFamilyOrPath = fontFamilyOrPath,
             ShapeType = NameTags.Core.Outlines.ShapeType.RoundedRectangle,
             ShapeParams = new ShapeParams { CornerRadiusMm = 3f },
-            PlateWidthMm = PlateWidthMm,
-            PlateHeightMm = PlateHeightMm,
+            PlateWidthMm = plateWidthMm,
+            PlateHeightMm = plateHeightMm,
             PlateThicknessMm = PlateThicknessMm,
             TextDepthMm = TextDepthMm,
             TextMarginLeftMm = 2.5f,
@@ -41,12 +48,12 @@ public static class WineGlassCharmBuilder
         };
         var plateMesh = modelService.GenerateTagMesh(plateRequest);
 
-        var hookOutline = HookOutlineProvider.BuildOpenHookOutline(HookOuterRadiusMm, HookBandThicknessMm);
+        var hookOutline = HookOutlineProvider.BuildOpenHookOutline(hookOuterRadiusMm, hookBandThicknessMm);
         var hookMesh = MeshExtruder.Extrude(hookOutline, zBottom: 0f, zTop: PlateThicknessMm);
 
         // Anchor the hook's open end into the plate's top edge, overlapping by a couple mm so
         // slicers see one fused solid rather than two merely-touching ones.
-        float anchorY = PlateHeightMm / 2f - HookOverlapMm;
+        float anchorY = plateHeightMm / 2f - HookOverlapMm;
         var positionedHookMesh = hookMesh.Translate(new Vector3(0f, anchorY, 0f));
 
         return Mesh3D.Combine(plateMesh, positionedHookMesh);

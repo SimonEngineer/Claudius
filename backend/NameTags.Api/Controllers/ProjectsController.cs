@@ -168,7 +168,7 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         var name = project.Names.FirstOrDefault(n => n.Id == nameId);
         if (name is null) return NotFound();
 
-        var mesh = PackGenerationService.BuildPackMesh(_generationService, BuildRequest(project, name));
+        var mesh = PackGenerationService.BuildPackMesh(_generationService, BuildRequest(project, name), BuildPackSettings(project));
         var stream = new MemoryStream();
         StlWriter.WriteBinary(stream, mesh);
         stream.Position = 0;
@@ -187,6 +187,7 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         Response.ContentType = "application/zip";
         Response.Headers.ContentDisposition = $"attachment; filename=\"{SanitizeFileName(project.Name)}-packs.zip\"";
 
+        var packSettings = BuildPackSettings(project);
         using var archive = new ZipArchive(Response.BodyWriter.AsStream(), ZipArchiveMode.Create);
         var usedFileNames = new HashSet<string>();
         foreach (var name in project.Names)
@@ -199,7 +200,7 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
 
             var entry = archive.CreateEntry(fileName, CompressionLevel.Fastest);
             await using var entryStream = entry.Open();
-            var mesh = PackGenerationService.BuildPackMesh(_generationService, BuildRequest(project, name));
+            var mesh = PackGenerationService.BuildPackMesh(_generationService, BuildRequest(project, name), packSettings);
             StlWriter.WriteBinary(entryStream, mesh);
         }
 
@@ -247,6 +248,17 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
             .ToList(),
     };
 
+    private static PackSettings BuildPackSettings(TagProject project) => new(
+        project.CharmPlateWidthMm,
+        project.CharmPlateHeightMm,
+        project.CharmHookOuterRadiusMm,
+        project.CharmHookBandThicknessMm,
+        project.ClipPlateWidthMm,
+        project.ClipPlateHeightMm,
+        project.ClipArmLengthMm,
+        project.ClipGapMm,
+        project.ClipArmThicknessMm);
+
     private static void ApplySaveDto(TagProject project, SaveProjectDto dto)
     {
         var shapeParams = dto.ShapeParams ?? new ShapeParamsDto();
@@ -269,6 +281,15 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         project.TextHorizontalAlign = dto.TextHorizontalAlign;
         project.TextVerticalAlign = dto.TextVerticalAlign;
         project.BevelMm = dto.BevelMm;
+        project.CharmPlateWidthMm = dto.CharmPlateWidthMm;
+        project.CharmPlateHeightMm = dto.CharmPlateHeightMm;
+        project.CharmHookOuterRadiusMm = dto.CharmHookOuterRadiusMm;
+        project.CharmHookBandThicknessMm = dto.CharmHookBandThicknessMm;
+        project.ClipPlateWidthMm = dto.ClipPlateWidthMm;
+        project.ClipPlateHeightMm = dto.ClipPlateHeightMm;
+        project.ClipArmLengthMm = dto.ClipArmLengthMm;
+        project.ClipGapMm = dto.ClipGapMm;
+        project.ClipArmThicknessMm = dto.ClipArmThicknessMm;
         project.MountingHoles = (dto.MountingHoles ?? new List<SaveMountingHoleDto>())
             .Select(h => new TagMountingHole { OffsetXMm = h.OffsetXMm, OffsetYMm = h.OffsetYMm, DiameterMm = h.DiameterMm })
             .ToList();

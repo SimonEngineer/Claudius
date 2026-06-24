@@ -18,12 +18,20 @@ public static class ClothesClipBuilder
     public const float PlateThicknessMm = 3f;
     public const float TextDepthMm = 1.5f;
 
-    private const float ClipArmLengthMm = 20f;
-    private const float ClipGapMm = 2.4f;
-    private const float ClipArmThicknessMm = 1.2f;
+    public const float ClipArmLengthMm = 20f;
+    public const float ClipGapMm = 2.4f;
+    public const float ClipArmThicknessMm = 1.2f;
     private const float ClipOverlapMm = 3f;
 
-    public static Mesh3D Build(ModelGenerationService modelService, string text, string fontFamilyOrPath)
+    public static Mesh3D Build(
+        ModelGenerationService modelService,
+        string text,
+        string fontFamilyOrPath,
+        float plateWidthMm = PlateWidthMm,
+        float plateHeightMm = PlateHeightMm,
+        float clipArmLengthMm = ClipArmLengthMm,
+        float clipGapMm = ClipGapMm,
+        float clipArmThicknessMm = ClipArmThicknessMm)
     {
         var plateRequest = new TagGenerationRequest
         {
@@ -31,8 +39,8 @@ public static class ClothesClipBuilder
             FontFamilyOrPath = fontFamilyOrPath,
             ShapeType = NameTags.Core.Outlines.ShapeType.RoundedRectangle,
             ShapeParams = new ShapeParams { CornerRadiusMm = 3f },
-            PlateWidthMm = PlateWidthMm,
-            PlateHeightMm = PlateHeightMm,
+            PlateWidthMm = plateWidthMm,
+            PlateHeightMm = plateHeightMm,
             PlateThicknessMm = PlateThicknessMm,
             TextDepthMm = TextDepthMm,
             TextMarginLeftMm = 4f,
@@ -46,11 +54,11 @@ public static class ClothesClipBuilder
         // (anchor) end at u=0 and the bend at u=armLengthMm. Rotate -90deg so that axis runs
         // along world Y instead, with the anchor end overlapping the plate's bottom edge and
         // the bend extending further away (more negative Y).
-        var clipOutline = ClipOutlineProvider.BuildAlligatorClipOutline(ClipArmLengthMm, ClipGapMm, ClipArmThicknessMm);
+        var clipOutline = ClipOutlineProvider.BuildAlligatorClipOutline(clipArmLengthMm, clipGapMm, clipArmThicknessMm);
         var rotatedOutline = RotateMinus90(clipOutline);
         var clipMesh = MeshExtruder.Extrude(rotatedOutline, zBottom: 0f, zTop: PlateThicknessMm);
 
-        float anchorY = -(PlateHeightMm / 2f) + ClipOverlapMm;
+        float anchorY = -(plateHeightMm / 2f) + ClipOverlapMm;
         var positionedClipMesh = clipMesh.Translate(new Vector3(0f, anchorY, 0f));
 
         return Mesh3D.Combine(plateMesh, positionedClipMesh);

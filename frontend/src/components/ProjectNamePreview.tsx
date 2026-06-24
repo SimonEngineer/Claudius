@@ -36,6 +36,8 @@ export function ProjectNamePreview({ projectId, name, onOverrideChange }: Projec
   // STL preview/download are GET endpoints, so appending a cache-busting query param
   // forces three's loader to refetch after an override changes the generated mesh.
   const previewUrl = `${projectPreviewUrl(projectId, name.id)}?v=${refreshKey}`
+  const packPreviewUrl = `${projectPackUrl(projectId, name.id)}?v=${refreshKey}`
+  const [showPackPreview, setShowPackPreview] = useState(false)
 
   return (
     <Card>
@@ -44,8 +46,11 @@ export function ProjectNamePreview({ projectId, name, onOverrideChange }: Projec
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="h-64 rounded-md border overflow-hidden bg-muted">
-          <ModelViewer stlUrl={previewUrl} />
+          <ModelViewer stlUrl={showPackPreview ? packPreviewUrl : previewUrl} />
         </div>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setShowPackPreview((v) => !v)}>
+          {showPackPreview ? "Show standing tag" : "Show pack (3-in-1)"}
+        </Button>
         <div className="flex items-end gap-2">
           <div className="flex flex-col gap-1.5 flex-1">
             <Label htmlFor={`depth-override-${name.id}`}>Text depth override (mm)</Label>

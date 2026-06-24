@@ -36,6 +36,17 @@ public sealed class TagProject
 
     public float BevelMm { get; set; } = 0f;
 
+    public float CharmPlateWidthMm { get; set; } = 28f;
+    public float CharmPlateHeightMm { get; set; } = 13f;
+    public float CharmHookOuterRadiusMm { get; set; } = 6f;
+    public float CharmHookBandThicknessMm { get; set; } = 1.8f;
+
+    public float ClipPlateWidthMm { get; set; } = 55f;
+    public float ClipPlateHeightMm { get; set; } = 22f;
+    public float ClipArmLengthMm { get; set; } = 20f;
+    public float ClipGapMm { get; set; } = 2.4f;
+    public float ClipArmThicknessMm { get; set; } = 1.2f;
+
     public List<TagName> Names { get; set; } = new();
     public List<TagMountingHole> MountingHoles { get; set; } = new();
 }
