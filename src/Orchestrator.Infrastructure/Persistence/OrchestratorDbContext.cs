@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Orchestrator.Domain;
 
 namespace Orchestrator.Infrastructure.Persistence;
@@ -12,6 +13,17 @@ public class OrchestratorDbContext(DbContextOptions<OrchestratorDbContext> optio
     public DbSet<TaskEvent> Events => Set<TaskEvent>();
     public DbSet<Approval> Approvals => Set<Approval>();
     public DbSet<Skill> Skills => Set<Skill>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        // Sqlite (used by the in-memory test fixture, never in production where Npgsql is
+        // used) can't order/filter on DateTimeOffset natively, so store it as a sortable
+        // binary representation there. This conversion is a no-op for Npgsql.
+        if (Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            configurationBuilder.Properties<DateTimeOffset>().HaveConversion<DateTimeOffsetToBinaryConverter>();
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

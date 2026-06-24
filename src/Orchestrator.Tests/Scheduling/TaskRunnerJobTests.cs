@@ -1,0 +1,136 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using Orchestrator.Domain;
+using Orchestrator.Domain.Streaming;
+using Orchestrator.Infrastructure.Engines;
+using Orchestrator.Infrastructure.Scheduling;
+using Orchestrator.Tests.Engines;
+using Xunit;
+
+namespace Orchestrator.Tests.Scheduling;
+
+/// <summary>
+/// Drives the real TaskRunnerJob/ApplyStateTransitionAsync against a Sqlite-backed DbContext, with
+/// the real ClaudeCodeAdapter/GitWorktreeService wired to a FakeProcessRunner so canned engine
+/// output (the same JSON shape the actual `claude` CLI prints) exercises the production state
+/// machine end to end, rather than re-deriving its logic in the test.
+/// </summary>
+public class TaskRunnerJobTests : IDisposable
+{
+    private readonly TestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
+    private const string VerifyFailResult =
+        """{"type":"result","subtype":"success","result":"```json\n{\"verdict\": \"fail\", \"notes\": \"tests fail\", \"followUpInstruction\": \"fix it\"}\n```"}""";
+
+    private static Project NewProject() => new()
+    {
+        Name = "proj",
+        RepoPath = "/repo",
+        WorkerModel = "worker-model",
+        SupervisorModel = "supervisor-model",
+    };
+
+    private TaskRunnerJob MakeJob(IReadOnlyList<string> claudeStdout)
+    {
+        var fakeRunner = new FakeProcessRunner(claudeStdout);
+        return new TaskRunnerJob(
+            _db.Context,
+            new ClaudeCodeAdapter(fakeRunner, NullLogger<ClaudeCodeAdapter>.Instance),
+            new AiderAdapter(fakeRunner, NullLogger<AiderAdapter>.Instance),
+            new GitWorktreeService(fakeRunner, NullLogger<GitWorktreeService>.Instance),
+            new RunCancellationRegistry(),
+            Substitute.For<IEventBroadcaster>(),
+            Options.Create(new SchedulerOptions()),
+            NullLogger<TaskRunnerJob>.Instance);
+    }
+
+    [Fact]
+    public async Task VerifyFail_BelowMaxRetries_LoopsBackToNeedsFix_WithoutDeadLettering()
+    {
+        var project = NewProject();
+        var task = new AgentTask
+        {
+            ProjectId = project.Id,
+            Title = "t",
+            State = TaskState.Verifying,
+            RetryCount = 0,
+        };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeJob([VerifyFailResult]).ExecuteSupervisorTaskAsync(task.Id);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.Equal(TaskState.NeedsFix, reloaded!.State);
+        Assert.Equal(1, reloaded.RetryCount);
+    }
+
+    [Fact]
+    public async Task VerifyFail_PastMaxRetries_DeadLettersInsteadOfLoopingForever()
+    {
+        var project = NewProject();
+        var task = new AgentTask
+        {
+            ProjectId = project.Id,
+            Title = "t",
+            State = TaskState.Verifying,
+            RetryCount = AgentTask.MaxRetries,
+        };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeJob([VerifyFailResult]).ExecuteSupervisorTaskAsync(task.Id);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.Equal(TaskState.DeadLetter, reloaded!.State);
+    }
+
+    [Fact]
+    public async Task VerifyFail_PastMaxRetries_PropagatesDeadLetterToDecomposedParent()
+    {
+        var project = NewProject();
+        var parent = new AgentTask { ProjectId = project.Id, Title = "parent", State = TaskState.Decomposed };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(parent);
+        await _db.Context.SaveChangesAsync();
+
+        var child = new AgentTask
+        {
+            ProjectId = project.Id,
+            ParentTaskId = parent.Id,
+            Title = "child",
+            State = TaskState.Verifying,
+            RetryCount = AgentTask.MaxRetries,
+        };
+        _db.Context.Tasks.Add(child);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeJob([VerifyFailResult]).ExecuteSupervisorTaskAsync(child.Id);
+
+        var reloadedParent = await _db.Context.Tasks.FindAsync(parent.Id);
+        Assert.Equal(TaskState.DeadLetter, reloadedParent!.State);
+    }
+
+    [Fact]
+    public async Task VerifyPass_MovesTaskToDone()
+    {
+        const string verifyPass =
+            """{"type":"result","subtype":"success","result":"```json\n{\"verdict\": \"pass\", \"notes\": \"looks good\"}\n```"}""";
+
+        var project = NewProject();
+        var task = new AgentTask { ProjectId = project.Id, Title = "t", State = TaskState.Verifying };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeJob([verifyPass]).ExecuteSupervisorTaskAsync(task.Id);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.Equal(TaskState.Done, reloaded!.State);
+    }
+}
