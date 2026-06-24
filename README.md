@@ -123,6 +123,26 @@ npm run dev
 Open `http://localhost:5173`. Set `VITE_API_BASE_URL` if the API isn't on the
 default port.
 
+#### Securing the API past localhost
+
+By default there's no auth at all -- fine for a single-user setup where only
+`localhost` can reach the API. Before exposing it any further (e.g. behind a
+reverse proxy), set a shared secret on both sides:
+
+```bash
+# API
+export Auth__SharedSecret="some-long-random-value"
+
+# Dashboard (web/.env)
+VITE_API_KEY=some-long-random-value
+```
+
+With `Auth:SharedSecret` unset (the default), the API is unauthenticated as
+before. Once set, every request (REST and the SignalR hub) must present it via
+an `X-Api-Key` header, an `Authorization: Bearer` header, or an `access_token`
+query parameter; `/api/health`, `/swagger`, and `/hangfire` stay exempt (the
+Hangfire dashboard keeps its own localhost-only check).
+
 ### Or: everything in Docker
 
 ```bash

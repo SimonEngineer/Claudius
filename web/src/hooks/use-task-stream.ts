@@ -6,7 +6,7 @@ import {
   LogLevel,
 } from "@microsoft/signalr";
 
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, API_KEY } from "@/lib/api";
 import type { ApprovalStatus, LiveEvent, TaskState } from "@/types/api";
 
 let sharedConnection: HubConnection | null = null;
@@ -14,7 +14,9 @@ let sharedConnection: HubConnection | null = null;
 function getConnection(): HubConnection {
   if (!sharedConnection) {
     sharedConnection = new HubConnectionBuilder()
-      .withUrl(`${API_BASE_URL}/hubs/tasks`)
+      .withUrl(`${API_BASE_URL}/hubs/tasks`, {
+        accessTokenFactory: API_KEY ? () => API_KEY : undefined,
+      })
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
       .build();

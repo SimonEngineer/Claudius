@@ -3,6 +3,7 @@ using Hangfire.Dashboard;
 using Microsoft.EntityFrameworkCore;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Orchestrator.Api.Auth;
 using Orchestrator.Api.Hubs;
 using Orchestrator.Api.Streaming;
 using Orchestrator.Domain.Streaming;
@@ -88,6 +89,7 @@ if (app.Environment.IsDevelopment())
 app.UseSerilogRequestLogging();
 app.UseCors("Dashboard");
 app.UseHttpsRedirection();
+app.UseMiddleware<SharedSecretAuthMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

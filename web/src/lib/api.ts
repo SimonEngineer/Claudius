@@ -2,9 +2,15 @@ import type { AgentTask, Approval, Goal, Overview, Project, TaskEventDto } from 
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5139";
 
+// Empty by default: the API only enforces this when Auth:SharedSecret is configured server-side.
+export const API_KEY = import.meta.env.VITE_API_KEY ?? "";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(API_KEY ? { "X-Api-Key": API_KEY } : {}),
+    },
     ...init,
   });
   if (!res.ok) {
