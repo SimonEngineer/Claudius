@@ -31,6 +31,14 @@ fresh, up-to-date model.
 
 ## Running locally
 
+### Prerequisites
+
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Node.js 20+ and npm
+
+The backend and frontend run as two separate processes; start the backend
+first since the frontend expects it at `http://localhost:5050`.
+
 ### Backend
 
 ```bash
@@ -40,7 +48,9 @@ dotnet run
 
 Listens on `http://localhost:5050` by default (see `Properties/launchSettings.json`).
 On first run it creates `nametags.db` (SQLite) and applies EF Core migrations
-automatically at startup.
+automatically at startup — no separate `dotnet ef database update` step needed.
+
+Run the test suite from the repo's `backend/` directory with `dotnet test`.
 
 ### Frontend
 
@@ -50,7 +60,21 @@ npm install
 npm run dev
 ```
 
-Set `VITE_API_BASE_URL` if the backend isn't running at `http://localhost:5050`.
+Open the URL Vite prints (`http://localhost:5173` by default) in a browser.
+The backend's CORS policy only allows that exact origin
+(`backend/NameTags.Api/Program.cs`), so if you change the dev server's port
+update the `WithOrigins(...)` call there too — `vite preview`'s default port
+(4173) will fail CORS unless you do.
+
+Set `VITE_API_BASE_URL` (e.g. in a `.env.local`) if the backend isn't running
+at `http://localhost:5050`.
+
+### Verifying it's working
+
+With both running, visiting `http://localhost:5173` should show the
+projects list. Create a project, type a name, and a live STL preview should
+render within a second or two — that confirms the frontend can reach the
+backend and the mesh pipeline is generating geometry end to end.
 
 ## Features
 
