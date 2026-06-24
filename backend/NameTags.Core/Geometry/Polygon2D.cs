@@ -88,4 +88,28 @@ public sealed class Polygon2D
         }
         return result;
     }
+
+    /// <summary>
+    /// Returns a new polygon with an extra clockwise-wound circular contour appended, which
+    /// the existing NonZero-winding triangulator and extruder already treat as a hole --
+    /// the same mechanism that punches the inner hole in glyphs like "O", no changes needed
+    /// to either of them.
+    /// </summary>
+    public Polygon2D WithHoleCircle(Vector2 center, float radius, int segments = 32)
+    {
+        var result = new Polygon2D();
+        foreach (var contour in Contours)
+        {
+            result.AddContour(contour.Points);
+        }
+
+        var holePoints = new List<Vector2>(segments);
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = -2f * MathF.PI * i / segments;
+            holePoints.Add(center + new Vector2(radius * MathF.Cos(angle), radius * MathF.Sin(angle)));
+        }
+        result.AddContour(holePoints);
+        return result;
+    }
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using NameTags.Api.Dtos;
 using NameTags.Api.Validation;
 using NameTags.Core.Export;
+using NameTags.Core.Geometry;
 using NameTags.Core.Outlines;
 using NameTags.Core.Pipeline;
 
@@ -34,7 +35,8 @@ public class ModelsController : ControllerBase
         float TextMarginTopMm = 5f,
         float TextMarginBottomMm = 5f,
         TextHorizontalAlign TextHorizontalAlign = TextHorizontalAlign.Center,
-        TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center);
+        TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center,
+        List<MountingHole>? MountingHoles = null);
 
     [HttpPost("preview.stl")]
     public IActionResult Preview([FromBody] GenerateTagRequestDto dto) => GenerateStl(dto, asAttachment: false);
@@ -65,6 +67,7 @@ public class ModelsController : ControllerBase
             TextVerticalAlign = dto.TextVerticalAlign,
             CustomSvgBytes = dto.CustomSvgBytes,
             ShapeParams = (dto.ShapeParams ?? new ShapeParamsDto()).ToShapeParams(),
+            MountingHoles = dto.MountingHoles ?? new List<MountingHole>(),
         };
 
         var mesh = _generationService.GenerateTagMesh(request);

@@ -7,6 +7,7 @@ public sealed class NameTagsDbContext(DbContextOptions<NameTagsDbContext> option
 {
     public DbSet<TagProject> TagProjects => Set<TagProject>();
     public DbSet<TagName> TagNames => Set<TagName>();
+    public DbSet<TagMountingHole> TagMountingHoles => Set<TagMountingHole>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,5 +31,11 @@ public sealed class NameTagsDbContext(DbContextOptions<NameTagsDbContext> option
 
         modelBuilder.Entity<TagName>()
             .HasIndex(n => new { n.TagProjectId, n.SortOrder });
+
+        modelBuilder.Entity<TagProject>()
+            .HasMany(p => p.MountingHoles)
+            .WithOne(h => h.TagProject)
+            .HasForeignKey(h => h.TagProjectId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

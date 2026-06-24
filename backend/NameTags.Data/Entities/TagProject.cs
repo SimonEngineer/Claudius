@@ -35,4 +35,5 @@ public sealed class TagProject
     public TextVerticalAlign TextVerticalAlign { get; set; } = TextVerticalAlign.Center;
 
     public List<TagName> Names { get; set; } = new();
+    public List<TagMountingHole> MountingHoles { get; set; } = new();
 }

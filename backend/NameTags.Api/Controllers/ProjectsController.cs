@@ -32,7 +32,7 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ProjectDetailDto>> Get(int id)
     {
-        var project = await db.TagProjects.Include(p => p.Names).FirstOrDefaultAsync(p => p.Id == id);
+        var project = await db.TagProjects.Include(p => p.Names).Include(p => p.MountingHoles).FirstOrDefaultAsync(p => p.Id == id);
         if (project is null) return NotFound();
         return ProjectDetailDto.FromEntity(project);
     }
@@ -50,8 +50,9 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<ActionResult<ProjectDetailDto>> Update(int id, [FromBody] SaveProjectDto dto)
     {
-        var project = await db.TagProjects.Include(p => p.Names).FirstOrDefaultAsync(p => p.Id == id);
+        var project = await db.TagProjects.Include(p => p.Names).Include(p => p.MountingHoles).FirstOrDefaultAsync(p => p.Id == id);
         if (project is null) return NotFound();
+        db.TagMountingHoles.RemoveRange(project.MountingHoles);
         ApplySaveDto(project, dto);
         await db.SaveChangesAsync();
         return ProjectDetailDto.FromEntity(project);
@@ -136,6 +137,9 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
             ShapeParams = new ShapeParamsDto(
                 project.CornerRadiusMm, project.StarPoints, project.StarInnerRadiusRatio, project.CurveSegments
             ).ToShapeParams(),
+            MountingHoles = project.MountingHoles
+                .Select(h => new NameTags.Core.Geometry.MountingHole(h.OffsetXMm, h.OffsetYMm, h.DiameterMm))
+                .ToList(),
         };
 
         var mesh = _generationService.GenerateTagMesh(request);
@@ -167,6 +171,9 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         project.TextMarginBottomMm = dto.TextMarginBottomMm;
         project.TextHorizontalAlign = dto.TextHorizontalAlign;
         project.TextVerticalAlign = dto.TextVerticalAlign;
+        project.MountingHoles = (dto.MountingHoles ?? new List<SaveMountingHoleDto>())
+            .Select(h => new TagMountingHole { OffsetXMm = h.OffsetXMm, OffsetYMm = h.OffsetYMm, DiameterMm = h.DiameterMm })
+            .ToList();
     }
 
     private static string ResolveFontPath(string fontFamilyOrPath) =>

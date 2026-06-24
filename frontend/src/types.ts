@@ -36,6 +36,13 @@ export const DEFAULT_SHAPE_PARAMS: ShapeParams = {
   curveSegments: 48,
 }
 
+export interface MountingHole {
+  id?: number
+  offsetXMm: number
+  offsetYMm: number
+  diameterMm: number
+}
+
 export interface TagGenerationParams {
   text: string
   shapeType: ShapeType
@@ -52,6 +59,7 @@ export interface TagGenerationParams {
   fontFamilyOrPath: string
   customSvgBytes?: string | null
   shapeParams: ShapeParams
+  mountingHoles: MountingHole[]
 }
 
 export const DEFAULT_GENERATION_PARAMS: Omit<TagGenerationParams, "text"> = {
@@ -69,6 +77,7 @@ export const DEFAULT_GENERATION_PARAMS: Omit<TagGenerationParams, "text"> = {
   fontFamilyOrPath: "DejaVuSans-Bold.ttf",
   customSvgBytes: null,
   shapeParams: DEFAULT_SHAPE_PARAMS,
+  mountingHoles: [],
 }
 
 export interface TagName {
@@ -107,6 +116,7 @@ export interface ProjectDetail {
   textVerticalAlign: TextVerticalAlign
   createdAt: string
   names: TagName[]
+  mountingHoles: MountingHole[]
 }
 
 export interface SaveProjectPayload {
@@ -125,4 +135,5 @@ export interface SaveProjectPayload {
   textMarginBottomMm: number
   textHorizontalAlign: TextHorizontalAlign
   textVerticalAlign: TextVerticalAlign
+  mountingHoles: MountingHole[]
 }

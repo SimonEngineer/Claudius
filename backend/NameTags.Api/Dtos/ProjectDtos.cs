@@ -8,6 +8,13 @@ public sealed record TagNameDto(int Id, string Text, int SortOrder, float? TextD
 
 public sealed record UpdateNameOverrideDto(float? TextDepthMmOverride);
 
+public sealed record MountingHoleDto(int Id, float OffsetXMm, float OffsetYMm, float DiameterMm)
+{
+    public static MountingHoleDto FromEntity(TagMountingHole h) => new(h.Id, h.OffsetXMm, h.OffsetYMm, h.DiameterMm);
+}
+
+public sealed record SaveMountingHoleDto(float OffsetXMm, float OffsetYMm, float DiameterMm = 4f);
+
 public sealed record ProjectSummaryDto(int Id, string Name, ShapeType ShapeType, int NameCount, DateTime CreatedAt);
 
 public sealed record ProjectDetailDto(
@@ -28,7 +35,8 @@ public sealed record ProjectDetailDto(
     TextHorizontalAlign TextHorizontalAlign,
     TextVerticalAlign TextVerticalAlign,
     DateTime CreatedAt,
-    List<TagNameDto> Names)
+    List<TagNameDto> Names,
+    List<MountingHoleDto> MountingHoles)
 {
     public static ProjectDetailDto FromEntity(TagProject p) => new(
         p.Id,
@@ -50,7 +58,8 @@ public sealed record ProjectDetailDto(
         p.CreatedAt,
         p.Names.OrderBy(n => n.SortOrder)
             .Select(n => new TagNameDto(n.Id, n.Text, n.SortOrder, n.TextDepthMmOverride))
-            .ToList());
+            .ToList(),
+        p.MountingHoles.Select(MountingHoleDto.FromEntity).ToList());
 }
 
 public sealed record SaveProjectDto(
@@ -68,4 +77,5 @@ public sealed record SaveProjectDto(
     float TextMarginTopMm = 5f,
     float TextMarginBottomMm = 5f,
     TextHorizontalAlign TextHorizontalAlign = TextHorizontalAlign.Center,
-    TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center);
+    TextVerticalAlign TextVerticalAlign = TextVerticalAlign.Center,
+    List<SaveMountingHoleDto>? MountingHoles = null);

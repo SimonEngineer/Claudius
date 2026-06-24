@@ -24,6 +24,10 @@ public sealed class ModelGenerationService
     public Mesh3D GenerateTagMesh(TagGenerationRequest request)
     {
         var plateOutline = GetPlateOutline(request);
+        foreach (var hole in request.MountingHoles)
+        {
+            plateOutline = plateOutline.WithHoleCircle(new Vector2(hole.OffsetXMm, hole.OffsetYMm), hole.DiameterMm / 2f);
+        }
         var plateMesh = MeshExtruder.Extrude(plateOutline, zBottom: 0f, zTop: request.PlateThicknessMm);
 
         var availableWidth = Math.Max(1f, request.PlateWidthMm - request.TextMarginLeftMm - request.TextMarginRightMm);

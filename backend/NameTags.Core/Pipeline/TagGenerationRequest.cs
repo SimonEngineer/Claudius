@@ -1,3 +1,4 @@
+using NameTags.Core.Geometry;
 using NameTags.Core.Outlines;
 
 namespace NameTags.Core.Pipeline;
@@ -30,4 +31,7 @@ public sealed record TagGenerationRequest
 
     /// <summary>Custom SVG outline bytes, required only when ShapeType is CustomSvg.</summary>
     public byte[]? CustomSvgBytes { get; init; }
+
+    /// <summary>Circular through-holes punched in the plate, e.g. for a lanyard or wall mount.</summary>
+    public List<MountingHole> MountingHoles { get; init; } = new();
 }

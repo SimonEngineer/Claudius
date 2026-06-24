@@ -6,11 +6,12 @@ import { Label } from "@/components/ui/label"
 import { NameListInput, namesFromText } from "@/components/NameListInput"
 import { ShapeSelector } from "@/components/ShapeSelector"
 import { ParamsPanel, type PlateParams } from "@/components/ParamsPanel"
+import { MountingHolesPanel } from "@/components/MountingHolesPanel"
 import { NameTagPreview } from "@/components/NameTagPreview"
 import { ProjectNamePreview } from "@/components/ProjectNamePreview"
 import { DownloadAllButton } from "@/components/DownloadAllButton"
 import { createProject, getProject, replaceNames, updateProject } from "@/api/projectsApi"
-import { DEFAULT_GENERATION_PARAMS, type ShapeParams, type ShapeType, type TagName } from "@/types"
+import { DEFAULT_GENERATION_PARAMS, type MountingHole, type ShapeParams, type ShapeType, type TagName } from "@/types"
 
 export function ProjectEditorPage() {
   const { id } = useParams<{ id: string }>()
@@ -35,6 +36,7 @@ export function ProjectEditorPage() {
     textVerticalAlign: DEFAULT_GENERATION_PARAMS.textVerticalAlign,
   })
   const [shapeParams, setShapeParams] = useState<ShapeParams>(DEFAULT_GENERATION_PARAMS.shapeParams)
+  const [mountingHoles, setMountingHoles] = useState<MountingHole[]>(DEFAULT_GENERATION_PARAMS.mountingHoles)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!isNew)
@@ -62,6 +64,7 @@ export function ProjectEditorPage() {
           textVerticalAlign: project.textVerticalAlign,
         })
         setShapeParams(project.shapeParams)
+        setMountingHoles(project.mountingHoles)
         setSavedNames(project.names)
         setSavedProjectId(project.id)
       })
@@ -81,6 +84,7 @@ export function ProjectEditorPage() {
         shapeParams,
         customSvgBase64: customSvgBytes,
         fontFamilyOrPath: DEFAULT_GENERATION_PARAMS.fontFamilyOrPath,
+        mountingHoles,
         ...plateParams,
       }
       const saved = projectId === null ? await createProject(payload) : await updateProject(projectId, payload)
@@ -132,6 +136,7 @@ export function ProjectEditorPage() {
             shapeParams={shapeParams}
             onShapeParamsChange={setShapeParams}
           />
+          <MountingHolesPanel holes={mountingHoles} onChange={setMountingHoles} />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -143,6 +148,7 @@ export function ProjectEditorPage() {
                 shapeType,
                 customSvgBytes,
                 shapeParams,
+                mountingHoles,
                 fontFamilyOrPath: DEFAULT_GENERATION_PARAMS.fontFamilyOrPath,
                 ...plateParams,
               }}
