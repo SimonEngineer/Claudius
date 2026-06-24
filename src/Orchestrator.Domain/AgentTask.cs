@@ -35,6 +35,10 @@ public class AgentTask
     public string? LockedBy { get; set; }
     public DateTimeOffset? LeaseExpiresAt { get; set; }
 
+    /// <summary>Set after a retryable failure to back off before the task becomes claimable
+    /// again, so a flaky/down model host doesn't get hammered in a tight retry loop.</summary>
+    public DateTimeOffset? NextAttemptAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 

@@ -38,8 +38,10 @@ public class TaskClaimingService(
 
         // Pull a generous candidate window (more than freeSlots) so per-project concurrency caps
         // don't starve later candidates when an earlier project is already at its own limit.
+        var now = DateTimeOffset.UtcNow;
         var candidates = await db.Tasks
-            .Where(t => t.Lane == lane && eligibleStates.Contains(t.State) && t.LockedBy == null)
+            .Where(t => t.Lane == lane && eligibleStates.Contains(t.State) && t.LockedBy == null
+                && (t.NextAttemptAt == null || t.NextAttemptAt <= now))
             .OrderByDescending(t => t.Priority)
             .ThenBy(t => t.CreatedAt)
             .Take(freeSlots * 5)
@@ -82,6 +84,7 @@ public class TaskClaimingService(
                 SET "LockedBy" = {workerId},
                     "LeaseExpiresAt" = {DateTimeOffset.UtcNow.Add(leaseDuration)},
                     "State" = {(lane == Lane.Supervisor ? NextSupervisorState(task.State) : TaskState.InProgress).ToString()},
+                    "NextAttemptAt" = NULL,
                     "UpdatedAt" = {DateTimeOffset.UtcNow}
                 WHERE "Id" = {task.Id} AND "LockedBy" IS NULL
                 """, ct);
@@ -93,6 +96,7 @@ public class TaskClaimingService(
 
             task.LockedBy = workerId;
             task.LeaseExpiresAt = DateTimeOffset.UtcNow.Add(leaseDuration);
+            task.NextAttemptAt = null;
             task.State = lane == Lane.Supervisor ? NextSupervisorState(task.State) : TaskState.InProgress;
             perProjectInFlight[task.ProjectId] = currentForProject + 1;
             claimed.Add(task);
@@ -136,6 +140,11 @@ public class TaskClaimingService(
                     TaskState.Verifying => TaskState.ReadyForWork, // re-implement rather than re-verify blindly
                     _ => TaskState.Queued
                 };
+
+            if (task.State != TaskState.DeadLetter)
+            {
+                task.NextAttemptAt = now.Add(options.Value.GetRetryBackoff(task.RetryCount));
+            }
 
             task.UpdatedAt = now;
         }

@@ -135,6 +135,46 @@ public class TaskClaimingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RequeueStaleLeasesAsync_SetsBackoff_SoTaskIsNotImmediatelyClaimable()
+    {
+        var project = NewProject();
+        var task = NewTask(project, TaskState.InProgress);
+        task.LockedBy = "crashed-worker";
+        task.LeaseExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        task.RetryCount = 0;
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        var service = MakeService();
+        await service.RequeueStaleLeasesAsync(CancellationToken.None);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.NotNull(reloaded!.NextAttemptAt);
+        Assert.True(reloaded.NextAttemptAt > DateTimeOffset.UtcNow);
+
+        var claimed = await service.ClaimNextBatchAsync(Lane.Worker, CancellationToken.None);
+        Assert.Empty(claimed);
+    }
+
+    [Fact]
+    public async Task ClaimNextBatchAsync_ClaimsTask_OnceBackoffWindowHasPassed()
+    {
+        var project = NewProject();
+        var task = NewTask(project, TaskState.ReadyForWork);
+        task.NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        var service = MakeService();
+        var claimed = await service.ClaimNextBatchAsync(Lane.Worker, CancellationToken.None);
+
+        Assert.Single(claimed);
+        Assert.Null(claimed[0].NextAttemptAt);
+    }
+
+    [Fact]
     public async Task RequeueStaleLeasesAsync_DeadLetters_WhenRetryCountExceedsMax()
     {
         var project = NewProject();

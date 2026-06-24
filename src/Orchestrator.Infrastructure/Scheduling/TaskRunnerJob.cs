@@ -228,6 +228,7 @@ public class TaskRunnerJob(
                 }
                 task.PlanJson = result.PlanJson ?? task.PlanJson;
                 task.State = TaskState.NeedsFix;
+                task.NextAttemptAt = DateTimeOffset.UtcNow.Add(options.Value.GetRetryBackoff(task.RetryCount));
                 break;
 
             case EngineOutcome.Cancelled:
@@ -250,6 +251,7 @@ public class TaskRunnerJob(
                 {
                     return await PropagateToParentAsync(task, TaskState.DeadLetter, ct);
                 }
+                task.NextAttemptAt = DateTimeOffset.UtcNow.Add(options.Value.GetRetryBackoff(task.RetryCount));
                 break;
         }
 

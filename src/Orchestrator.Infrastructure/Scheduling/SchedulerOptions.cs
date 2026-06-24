@@ -32,4 +32,26 @@ public class SchedulerOptions
     /// waiting out a single global duration sized for the much slower worker lane.</summary>
     public TimeSpan GetLeaseDuration(Lane lane) =>
         (lane == Lane.Supervisor ? SupervisorRunTimeout : WorkerRunTimeout) + LeaseBuffer;
+
+    /// <summary>Base delay for the first retry after a failure. Doubled per subsequent retry, up
+    /// to RetryBackoffMax, so a flaky/down model host gets hit with decreasing frequency instead
+    /// of being hammered in a tight retry loop.</summary>
+    public TimeSpan RetryBackoffBase { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Ceiling on the exponential retry backoff.</summary>
+    public TimeSpan RetryBackoffMax { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>Exponential backoff for the given retry attempt (1-indexed): RetryBackoffBase * 2^(retryCount-1),
+    /// capped at RetryBackoffMax.</summary>
+    public TimeSpan GetRetryBackoff(int retryCount)
+    {
+        if (retryCount <= 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var shift = Math.Min(retryCount - 1, 30); // guard against overflow on pathological RetryCount values
+        var backoff = RetryBackoffBase * Math.Pow(2, shift);
+        return backoff > RetryBackoffMax ? RetryBackoffMax : backoff;
+    }
 }

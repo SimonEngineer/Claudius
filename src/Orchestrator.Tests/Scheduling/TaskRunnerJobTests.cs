@@ -25,6 +25,9 @@ public class TaskRunnerJobTests : IDisposable
     private const string VerifyFailResult =
         """{"type":"result","subtype":"success","result":"```json\n{\"verdict\": \"fail\", \"notes\": \"tests fail\", \"followUpInstruction\": \"fix it\"}\n```"}""";
 
+    private const string EngineErrorResult =
+        """{"type":"result","subtype":"error_during_execution"}""";
+
     private static Project NewProject() => new()
     {
         Name = "proj",
@@ -114,6 +117,30 @@ public class TaskRunnerJobTests : IDisposable
 
         var reloadedParent = await _db.Context.Tasks.FindAsync(parent.Id);
         Assert.Equal(TaskState.DeadLetter, reloadedParent!.State);
+    }
+
+    [Fact]
+    public async Task ImplementFail_SetsNextAttemptAt_SoTaskBacksOffBeforeRetrying()
+    {
+        var project = NewProject();
+        var task = new AgentTask
+        {
+            ProjectId = project.Id,
+            Title = "t",
+            State = TaskState.InProgress,
+            RetryCount = 0,
+        };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        var before = DateTimeOffset.UtcNow;
+        await MakeJob([EngineErrorResult]).ExecuteWorkerTaskAsync(task.Id);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.Equal(TaskState.ReadyForWork, reloaded!.State);
+        Assert.NotNull(reloaded.NextAttemptAt);
+        Assert.True(reloaded.NextAttemptAt > before);
     }
 
     [Fact]
