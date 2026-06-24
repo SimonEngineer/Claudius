@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { TripsApi, MediaApi } from '@/api/resources'
-import { BookingType, TimelineEntryType, MediaKind, EntityType } from '@/types'
+import { BookingType, TimelineEntryType, MediaKind, EntityType, TripStatus } from '@/types'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,15 +14,49 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog'
 import { LocationMap } from '@/components/LocationMap'
-import { ArrowLeft, Plus, Camera, StickyNote, Link2, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus, Camera, StickyNote, Link2, Trash2, Pencil, ChevronUp, ChevronDown, MapPin } from 'lucide-react'
 
 const BOOKING_LABEL: Record<number, string> = {
   [BookingType.Flight]: 'Flight', [BookingType.Hotel]: 'Hotel', [BookingType.CarRental]: 'Car rental',
   [BookingType.Ticket]: 'Ticket', [BookingType.Other]: 'Other',
 }
+const STATUS_LABEL: Record<number, string> = { [TripStatus.Planning]: 'Planning', [TripStatus.Active]: 'Active', [TripStatus.Completed]: 'Completed' }
+
+function computedStatus(startDate?: string | null, endDate?: string | null, fallback: number = TripStatus.Planning): number {
+  if (!startDate || !endDate) return fallback
+  const today = new Date().toISOString().slice(0, 10)
+  if (today < startDate) return TripStatus.Planning
+  if (today > endDate) return TripStatus.Completed
+  return TripStatus.Active
+}
+
+const BOOKING_FIELD_SCHEMA: Record<number, { key: string; label: string }[]> = {
+  [BookingType.Flight]: [
+    { key: 'airline', label: 'Airline' }, { key: 'flightNumber', label: 'Flight #' },
+    { key: 'seat', label: 'Seat' }, { key: 'terminal', label: 'Terminal/Gate' },
+  ],
+  [BookingType.Hotel]: [
+    { key: 'address', label: 'Address' }, { key: 'roomType', label: 'Room type' },
+    { key: 'checkIn', label: 'Check-in time' }, { key: 'checkOut', label: 'Check-out time' },
+  ],
+  [BookingType.CarRental]: [
+    { key: 'company', label: 'Company' }, { key: 'carClass', label: 'Car class' },
+    { key: 'pickupLocation', label: 'Pickup location' }, { key: 'dropoffLocation', label: 'Dropoff location' },
+  ],
+  [BookingType.Ticket]: [
+    { key: 'venue', label: 'Venue' }, { key: 'seat', label: 'Seat/Section' },
+  ],
+  [BookingType.Other]: [],
+}
+
+function parseDetails(json?: string | null): Record<string, string> {
+  if (!json) return {}
+  try { return JSON.parse(json) } catch { return { notes: json } }
+}
 
 export function TripDetailPage() {
   const { id = '' } = useParams()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [tripMode, setTripMode] = useState(false)
 
@@ -30,6 +64,20 @@ export function TripDetailPage() {
   const { data: stops = [] } = useQuery({ queryKey: ['trip', id, 'stops'], queryFn: () => TripsApi.stops(id) })
   const { data: bookings = [] } = useQuery({ queryKey: ['trip', id, 'bookings'], queryFn: () => TripsApi.bookings(id) })
   const { data: timeline = [] } = useQuery({ queryKey: ['trip', id, 'timeline'], queryFn: () => TripsApi.timeline(id) })
+
+  const [tripEditOpen, setTripEditOpen] = useState(false)
+  const [tripForm, setTripForm] = useState({ name: '', description: '', startDate: '', endDate: '', status: String(TripStatus.Planning) })
+  const updateTrip = useMutation({
+    mutationFn: () => TripsApi.update(id, {
+      name: tripForm.name, description: tripForm.description || null,
+      startDate: tripForm.startDate || null, endDate: tripForm.endDate || null, status: Number(tripForm.status),
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id] }); setTripEditOpen(false) },
+  })
+  const removeTrip = useMutation({
+    mutationFn: () => TripsApi.remove(id),
+    onSuccess: () => navigate('/trips'),
+  })
 
   const [stopOpen, setStopOpen] = useState(false)
   const [stopForm, setStopForm] = useState({ name: '', lat: '', lng: '', arriveDate: '', departDate: '', isStart: false, isEnd: false, notes: '' })
@@ -45,15 +93,32 @@ export function TripDetailPage() {
     mutationFn: (stopId: string) => TripsApi.removeStop(stopId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id, 'stops'] }),
   })
+  const reorderStops = useMutation({
+    mutationFn: (orderedIds: string[]) => TripsApi.reorderStops(id, orderedIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id, 'stops'] }),
+  })
+  const moveStop = (stopId: string, direction: -1 | 1) => {
+    const sorted = [...stops].sort((a, b) => a.sortOrder - b.sortOrder)
+    const idx = sorted.findIndex((s) => s.id === stopId)
+    const swapIdx = idx + direction
+    if (swapIdx < 0 || swapIdx >= sorted.length) return
+    const ids = sorted.map((s) => s.id)
+    ;[ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]]
+    reorderStops.mutate(ids)
+  }
 
   const [bookingOpen, setBookingOpen] = useState(false)
-  const [bookingForm, setBookingForm] = useState({ type: String(BookingType.Flight), title: '', confirmationNumber: '', startAt: '', endAt: '', details: '' })
+  const [bookingForm, setBookingForm] = useState<{ type: string; title: string; confirmationNumber: string; startAt: string; endAt: string; fields: Record<string, string> }>(
+    { type: String(BookingType.Flight), title: '', confirmationNumber: '', startAt: '', endAt: '', fields: {} },
+  )
+  const resetBookingForm = () => setBookingForm({ type: String(BookingType.Flight), title: '', confirmationNumber: '', startAt: '', endAt: '', fields: {} })
   const addBooking = useMutation({
     mutationFn: () => TripsApi.addBooking(id, {
       type: Number(bookingForm.type), title: bookingForm.title, confirmationNumber: bookingForm.confirmationNumber || null,
-      startAt: bookingForm.startAt || null, endAt: bookingForm.endAt || null, lat: null, lng: null, detailsJson: bookingForm.details || null,
+      startAt: bookingForm.startAt || null, endAt: bookingForm.endAt || null, lat: null, lng: null,
+      detailsJson: Object.keys(bookingForm.fields).length ? JSON.stringify(bookingForm.fields) : null,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'bookings'] }); setBookingOpen(false); setBookingForm({ type: String(BookingType.Flight), title: '', confirmationNumber: '', startAt: '', endAt: '', details: '' }) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'bookings'] }); setBookingOpen(false); resetBookingForm() },
   })
   const removeBooking = useMutation({
     mutationFn: (bookingId: string) => TripsApi.removeBooking(bookingId),
@@ -61,6 +126,7 @@ export function TripDetailPage() {
   })
 
   const [journalText, setJournalText] = useState('')
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'locating' | 'found' | 'unavailable'>('idle')
   const addNoteEntry = useMutation({
     mutationFn: () => TripsApi.addTimelineEntry(id, { type: TimelineEntryType.Note, content: journalText }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'timeline'] }); setJournalText('') },
@@ -73,10 +139,12 @@ export function TripDetailPage() {
     mutationFn: async (file: File) => {
       const { url } = await MediaApi.upload(file)
       const isVideo = file.type.startsWith('video')
+      setGeoStatus('locating')
       const pos = await new Promise<GeolocationPosition | null>((resolve) => {
         if (!navigator.geolocation) return resolve(null)
         navigator.geolocation.getCurrentPosition((p) => resolve(p), () => resolve(null), { timeout: 4000 })
       })
+      setGeoStatus(pos ? 'found' : 'unavailable')
       const entry = await TripsApi.addTimelineEntry(id, {
         type: isVideo ? TimelineEntryType.Video : TimelineEntryType.Photo,
         lat: pos?.coords.latitude, lng: pos?.coords.longitude,
@@ -86,7 +154,7 @@ export function TripDetailPage() {
         kind: isVideo ? MediaKind.Video : MediaKind.Photo, url, capturedAt: new Date().toISOString(),
       })
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id, 'timeline'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'timeline'] }); setTimeout(() => setGeoStatus('idle'), 2000) },
   })
   const removeTimelineEntry = useMutation({
     mutationFn: (entryId: string) => TripsApi.removeTimelineEntry(entryId),
@@ -95,7 +163,8 @@ export function TripDetailPage() {
 
   if (!trip) return null
 
-  const pins = stops.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, label: s.name }))
+  const sortedStops = [...stops].sort((a, b) => a.sortOrder - b.sortOrder)
+  const pins = sortedStops.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, label: s.name }))
 
   return (
     <div className="flex flex-col gap-4 pb-20">
@@ -107,10 +176,40 @@ export function TripDetailPage() {
         <div>
           <h1 className="text-2xl font-bold">{trip.name}</h1>
           <p className="text-muted-foreground">{trip.startDate} → {trip.endDate}</p>
+          <span className="mt-1 inline-block rounded-full bg-secondary px-2 py-0.5 text-xs">{STATUS_LABEL[computedStatus(trip.startDate, trip.endDate, trip.status)]}</span>
         </div>
-        <Button variant={tripMode ? 'default' : 'outline'} onClick={() => setTripMode((m) => !m)}>
-          {tripMode ? 'On the trip ✓' : 'On the trip?'}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant={tripMode ? 'default' : 'outline'} onClick={() => setTripMode((m) => !m)}>
+            {tripMode ? 'On the trip ✓' : 'On the trip?'}
+          </Button>
+          <Dialog open={tripEditOpen} onOpenChange={(o) => { setTripEditOpen(o); if (o) setTripForm({ name: trip.name, description: trip.description ?? '', startDate: trip.startDate ?? '', endDate: trip.endDate ?? '', status: String(trip.status) }) }}>
+            <Button variant="outline" size="icon" onClick={() => setTripEditOpen(true)}><Pencil className="h-4 w-4" /></Button>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Edit trip</DialogTitle></DialogHeader>
+              <div className="flex flex-col gap-3">
+                <div><Label>Name</Label><Input value={tripForm.name} onChange={(e) => setTripForm({ ...tripForm, name: e.target.value })} /></div>
+                <div><Label>Description</Label><Textarea value={tripForm.description} onChange={(e) => setTripForm({ ...tripForm, description: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label>Start date</Label><Input type="date" value={tripForm.startDate} onChange={(e) => setTripForm({ ...tripForm, startDate: e.target.value })} /></div>
+                  <div><Label>End date</Label><Input type="date" value={tripForm.endDate} onChange={(e) => setTripForm({ ...tripForm, endDate: e.target.value })} /></div>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={tripForm.status} onValueChange={(v) => setTripForm({ ...tripForm, status: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(STATUS_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter><Button onClick={() => updateTrip.mutate()} disabled={!tripForm.name}>Save</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button variant="outline" size="icon" onClick={() => { if (confirm(`Delete "${trip.name}"? This removes all stops, bookings and journal entries.`)) removeTrip.mutate() }}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue={tripMode ? 'journal' : 'overview'}>
@@ -131,9 +230,19 @@ export function TripDetailPage() {
                   <DialogHeader><DialogTitle>Add stop</DialogTitle></DialogHeader>
                   <div className="flex flex-col gap-3">
                     <div><Label>Name</Label><Input value={stopForm.name} onChange={(e) => setStopForm({ ...stopForm, name: e.target.value })} /></div>
+                    <div>
+                      <Label className="flex items-center gap-1"><MapPin className="h-3 w-3" /> Click the map to set location</Label>
+                      <LocationMap
+                        height={220}
+                        pins={stopForm.lat && stopForm.lng ? [{ id: 'pick', lat: parseFloat(stopForm.lat), lng: parseFloat(stopForm.lng), label: stopForm.name || 'New stop' }] : []}
+                        center={stopForm.lat && stopForm.lng ? [parseFloat(stopForm.lat), parseFloat(stopForm.lng)] : undefined}
+                        zoom={stopForm.lat && stopForm.lng ? 8 : 2}
+                        onPick={(lat, lng) => setStopForm({ ...stopForm, lat: lat.toFixed(5), lng: lng.toFixed(5) })}
+                      />
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div><Label>Lat</Label><Input value={stopForm.lat} onChange={(e) => setStopForm({ ...stopForm, lat: e.target.value })} /></div>
-                      <div><Label>Lng</Label><Input value={stopForm.lng} onChange={(e) => setStopForm({ ...stopForm, lng: e.target.value })} /></div>
+                      <div><Label className="text-xs">Lat</Label><Input value={stopForm.lat} onChange={(e) => setStopForm({ ...stopForm, lat: e.target.value })} /></div>
+                      <div><Label className="text-xs">Lng</Label><Input value={stopForm.lng} onChange={(e) => setStopForm({ ...stopForm, lng: e.target.value })} /></div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div><Label>Arrive</Label><Input type="date" value={stopForm.arriveDate} onChange={(e) => setStopForm({ ...stopForm, arriveDate: e.target.value })} /></div>
@@ -150,7 +259,7 @@ export function TripDetailPage() {
               </Dialog>
             </div>
             <div className="flex flex-col gap-2">
-              {stops.map((s) => (
+              {sortedStops.map((s, i) => (
                 <Card key={s.id}>
                   <CardContent className="flex items-center justify-between p-3">
                     <div>
@@ -158,7 +267,11 @@ export function TripDetailPage() {
                       <div className="text-sm text-muted-foreground">{s.arriveDate} → {s.departDate}</div>
                       {s.notes && <p className="text-sm mt-1">{s.notes}</p>}
                     </div>
-                    <button onClick={() => removeStop.mutate(s.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => moveStop(s.id, -1)} disabled={i === 0} className="disabled:opacity-30"><ChevronUp className="h-4 w-4 text-muted-foreground" /></button>
+                      <button onClick={() => moveStop(s.id, 1)} disabled={i === sortedStops.length - 1} className="disabled:opacity-30"><ChevronDown className="h-4 w-4 text-muted-foreground" /></button>
+                      <button onClick={() => removeStop.mutate(s.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -178,7 +291,7 @@ export function TripDetailPage() {
                   <div className="flex flex-col gap-3">
                     <div>
                       <Label>Type</Label>
-                      <Select value={bookingForm.type} onValueChange={(v) => setBookingForm({ ...bookingForm, type: v })}>
+                      <Select value={bookingForm.type} onValueChange={(v) => setBookingForm({ ...bookingForm, type: v, fields: {} })}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {Object.entries(BOOKING_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
@@ -191,26 +304,43 @@ export function TripDetailPage() {
                       <div><Label>Start</Label><Input type="datetime-local" value={bookingForm.startAt} onChange={(e) => setBookingForm({ ...bookingForm, startAt: e.target.value })} /></div>
                       <div><Label>End</Label><Input type="datetime-local" value={bookingForm.endAt} onChange={(e) => setBookingForm({ ...bookingForm, endAt: e.target.value })} /></div>
                     </div>
-                    <div><Label>Details</Label><Textarea value={bookingForm.details} onChange={(e) => setBookingForm({ ...bookingForm, details: e.target.value })} placeholder="Seat, address, car class, etc." /></div>
+                    {BOOKING_FIELD_SCHEMA[Number(bookingForm.type)]?.map((f) => (
+                      <div key={f.key}>
+                        <Label>{f.label}</Label>
+                        <Input
+                          value={bookingForm.fields[f.key] ?? ''}
+                          onChange={(e) => setBookingForm({ ...bookingForm, fields: { ...bookingForm.fields, [f.key]: e.target.value } })}
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <Label>Notes</Label>
+                      <Textarea value={bookingForm.fields.notes ?? ''} onChange={(e) => setBookingForm({ ...bookingForm, fields: { ...bookingForm.fields, notes: e.target.value } })} />
+                    </div>
                   </div>
                   <DialogFooter><Button onClick={() => addBooking.mutate()} disabled={!bookingForm.title}>Add</Button></DialogFooter>
                 </DialogContent>
               </Dialog>
             </div>
             <div className="flex flex-col gap-2">
-              {bookings.map((b) => (
-                <Card key={b.id}>
-                  <CardContent className="flex items-center justify-between p-3">
-                    <div>
-                      <div className="font-medium">{BOOKING_LABEL[b.type]} · {b.title}</div>
-                      <div className="text-sm text-muted-foreground">{b.startAt} → {b.endAt}</div>
-                      {b.confirmationNumber && <div className="text-sm">Conf# {b.confirmationNumber}</div>}
-                      {b.detailsJson && <p className="text-sm mt-1 whitespace-pre-wrap">{b.detailsJson}</p>}
-                    </div>
-                    <button onClick={() => removeBooking.mutate(b.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
-                  </CardContent>
-                </Card>
-              ))}
+              {bookings.map((b) => {
+                const details = parseDetails(b.detailsJson)
+                return (
+                  <Card key={b.id}>
+                    <CardContent className="flex items-center justify-between p-3">
+                      <div>
+                        <div className="font-medium">{BOOKING_LABEL[b.type]} · {b.title}</div>
+                        <div className="text-sm text-muted-foreground">{b.startAt} → {b.endAt}</div>
+                        {b.confirmationNumber && <div className="text-sm">Conf# {b.confirmationNumber}</div>}
+                        {Object.entries(details).filter(([, v]) => v).map(([k, v]) => (
+                          <div key={k} className="text-sm mt-0.5"><span className="text-muted-foreground">{k}:</span> {v}</div>
+                        ))}
+                      </div>
+                      <button onClick={() => removeBooking.mutate(b.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                    </CardContent>
+                  </Card>
+                )
+              })}
               {bookings.length === 0 && <p className="text-sm text-muted-foreground">No bookings yet.</p>}
             </div>
           </div>
@@ -233,6 +363,14 @@ export function TripDetailPage() {
                     <Link2 className="h-4 w-4" /> Link
                   </Button>
                 </div>
+                {geoStatus !== 'idle' && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {geoStatus === 'locating' && 'Capturing location…'}
+                    {geoStatus === 'found' && 'Location attached ✓'}
+                    {geoStatus === 'unavailable' && 'Location unavailable — saved without geotag'}
+                  </p>
+                )}
               </CardContent>
             </Card>
 

@@ -62,6 +62,13 @@ public class MediaController : ControllerBase
     {
         var media = await _db.MediaItems.FindAsync(id);
         if (media == null) return NotFound();
+
+        if (media.Url.StartsWith("/uploads/"))
+        {
+            var path = Path.Combine(_env.ContentRootPath, "wwwroot", media.Url.TrimStart('/'));
+            if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
+        }
+
         _db.MediaItems.Remove(media);
         await _db.SaveChangesAsync();
         return NoContent();

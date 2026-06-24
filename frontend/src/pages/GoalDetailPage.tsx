@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { GoalsApi } from '@/api/resources'
-import { EntityType, GoalKind, GoalFieldType } from '@/types'
+import { EntityType, GoalKind, GoalFieldType, type GoalFieldTypeValue } from '@/types'
 import type { GoalItem } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,18 +10,30 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog'
 import { TagPicker } from '@/components/TagPicker'
 import { MediaGallery } from '@/components/MediaGallery'
 import { LocationMap } from '@/components/LocationMap'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Settings, MapPin } from 'lucide-react'
+
+const FIELD_TYPE_LABELS: Record<GoalFieldTypeValue, string> = {
+  [GoalFieldType.Text]: 'Text',
+  [GoalFieldType.Number]: 'Number',
+  [GoalFieldType.Date]: 'Date',
+  [GoalFieldType.Url]: 'URL',
+  [GoalFieldType.Boolean]: 'Yes/No',
+  [GoalFieldType.Location]: 'Location',
+}
 
 export function GoalDetailPage() {
   const { id = '' } = useParams()
   const qc = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
+  const [fieldsOpen, setFieldsOpen] = useState(false)
+  const [newField, setNewField] = useState({ label: '', fieldType: GoalFieldType.Text as GoalFieldTypeValue })
   const [itemDraft, setItemDraft] = useState<Record<string, string>>({})
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
 
@@ -44,6 +56,19 @@ export function GoalDetailPage() {
   const toggleComplete = useMutation({
     mutationFn: ({ itemId, completed }: { itemId: string; completed: boolean }) => GoalsApi.completeItem(itemId, completed),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['goal', id, 'items'] }),
+  })
+
+  const addField = useMutation({
+    mutationFn: () => GoalsApi.addField(id, {
+      key: newField.label.toLowerCase().replace(/\s+/g, '_'), label: newField.label,
+      fieldType: newField.fieldType, sortOrder: goal?.fieldDefinitions.length ?? 0,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', id] }); setNewField({ label: '', fieldType: GoalFieldType.Text }) },
+  })
+
+  const removeField = useMutation({
+    mutationFn: (fieldId: string) => GoalsApi.removeField(fieldId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['goal', id] }),
   })
 
   if (!goal) return null
@@ -78,35 +103,72 @@ export function GoalDetailPage() {
 
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Items</h2>
-            <Dialog open={addOpen} onOpenChange={setAddOpen}>
-              <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4" /> Add item</Button></DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Add item</DialogTitle></DialogHeader>
-                <div className="flex flex-col gap-3">
-                  <div>
-                    <Label>Name</Label>
-                    <Input value={itemDraft.name ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, name: e.target.value })} />
+            <div className="flex gap-2">
+              <Dialog open={fieldsOpen} onOpenChange={setFieldsOpen}>
+                <DialogTrigger asChild><Button size="sm" variant="outline"><Settings className="h-4 w-4" /> Manage fields</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Custom fields</DialogTitle></DialogHeader>
+                  <div className="flex flex-col gap-2">
+                    {goal.fieldDefinitions.map((f) => (
+                      <div key={f.id} className="flex items-center justify-between rounded-md border p-2">
+                        <span className="text-sm">{f.label} <span className="text-muted-foreground">({FIELD_TYPE_LABELS[f.fieldType]})</span></span>
+                        <button onClick={() => removeField.mutate(f.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                      </div>
+                    ))}
+                    {goal.fieldDefinitions.length === 0 && <p className="text-sm text-muted-foreground">No custom fields yet.</p>}
+                    <div className="flex gap-2 mt-2">
+                      <Input placeholder="Field label" value={newField.label} onChange={(e) => setNewField({ ...newField, label: e.target.value })} />
+                      <Select value={String(newField.fieldType)} onValueChange={(v) => setNewField({ ...newField, fieldType: Number(v) as GoalFieldTypeValue })}>
+                        <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(FIELD_TYPE_LABELS).map(([v, label]) => <SelectItem key={v} value={v}>{label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Button onClick={() => addField.mutate()} disabled={!newField.label}><Plus className="h-4 w-4" /></Button>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div><Label>Lat</Label><Input value={itemDraft.lat ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, lat: e.target.value })} /></div>
-                    <div><Label>Lng</Label><Input value={itemDraft.lng ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, lng: e.target.value })} /></div>
-                  </div>
-                  {goal.fieldDefinitions.map((f) => (
-                    <div key={f.id}>
-                      <Label>{f.label}</Label>
-                      <Input
-                        type={f.fieldType === GoalFieldType.Date ? 'date' : f.fieldType === GoalFieldType.Number ? 'number' : 'text'}
-                        value={itemDraft[f.id] ?? ''}
-                        onChange={(e) => setItemDraft({ ...itemDraft, [f.id]: e.target.value })}
+                </DialogContent>
+              </Dialog>
+              <Dialog open={addOpen} onOpenChange={setAddOpen}>
+                <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4" /> Add item</Button></DialogTrigger>
+                <DialogContent className="max-h-[85vh] overflow-y-auto">
+                  <DialogHeader><DialogTitle>Add item</DialogTitle></DialogHeader>
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <Label>Name</Label>
+                      <Input value={itemDraft.name ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, name: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label className="flex items-center gap-1"><MapPin className="h-3 w-3" /> Click the map to set location (optional)</Label>
+                      <LocationMap
+                        height={200}
+                        pins={itemDraft.lat && itemDraft.lng ? [{ id: 'pick', lat: parseFloat(itemDraft.lat), lng: parseFloat(itemDraft.lng), label: itemDraft.name || 'New item' }] : []}
+                        center={itemDraft.lat && itemDraft.lng ? [parseFloat(itemDraft.lat), parseFloat(itemDraft.lng)] : undefined}
+                        zoom={itemDraft.lat && itemDraft.lng ? 8 : 2}
+                        onPick={(lat, lng) => setItemDraft({ ...itemDraft, lat: lat.toFixed(5), lng: lng.toFixed(5) })}
                       />
                     </div>
-                  ))}
-                </div>
-                <DialogFooter>
-                  <Button onClick={() => addItem.mutate()} disabled={!itemDraft.name}>Add</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><Label className="text-xs">Lat</Label><Input value={itemDraft.lat ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, lat: e.target.value })} /></div>
+                      <div><Label className="text-xs">Lng</Label><Input value={itemDraft.lng ?? ''} onChange={(e) => setItemDraft({ ...itemDraft, lng: e.target.value })} /></div>
+                    </div>
+                    {goal.fieldDefinitions.map((f) => (
+                      <div key={f.id}>
+                        <Label>{f.label}</Label>
+                        <Input
+                          type={f.fieldType === GoalFieldType.Date ? 'date' : f.fieldType === GoalFieldType.Number ? 'number' : 'text'}
+                          value={itemDraft[f.id] ?? ''}
+                          onChange={(e) => setItemDraft({ ...itemDraft, [f.id]: e.target.value })}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={() => addItem.mutate()} disabled={!itemDraft.name}>Add</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-md border">

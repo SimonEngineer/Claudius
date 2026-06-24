@@ -90,6 +90,7 @@ export const TripsApi = {
   addStop: (id: string, data: Omit<TripStop, 'id'>) => api.post<TripStop>(`/trips/${id}/stops`, data).then((r) => r.data),
   updateStop: (stopId: string, data: Omit<TripStop, 'id'>) => api.put<TripStop>(`/trips/stops/${stopId}`, data).then((r) => r.data),
   removeStop: (stopId: string) => api.delete(`/trips/stops/${stopId}`),
+  reorderStops: (id: string, orderedStopIds: string[]) => api.put(`/trips/${id}/stops/reorder`, orderedStopIds),
 
   bookings: (id: string) => api.get<Booking[]>(`/trips/${id}/bookings`).then((r) => r.data),
   addBooking: (id: string, data: Omit<Booking, 'id'>) => api.post<Booking>(`/trips/${id}/bookings`, data).then((r) => r.data),

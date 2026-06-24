@@ -12,7 +12,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Pencil } from 'lucide-react'
+import type { Goal } from '@/types'
 
 const FIELD_TYPE_LABELS: Record<GoalFieldTypeValue, string> = {
   [GoalFieldType.Text]: 'Text',
@@ -27,6 +28,7 @@ interface FieldDraft { key: string; label: string; fieldType: GoalFieldTypeValue
 
 export function GoalsPage() {
   const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
@@ -38,30 +40,48 @@ export function GoalsPage() {
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: GoalsApi.list })
   const { data: trips = [] } = useQuery({ queryKey: ['trips'], queryFn: TripsApi.list })
 
-  const create = useMutation({
+  const resetForm = () => {
+    setName(''); setDescription(''); setIcon(''); setKind(GoalKind.Checklist); setLinkedTripId(''); setFields([])
+  }
+
+  const closeDialog = () => { setOpen(false); setEditingId(null); resetForm() }
+
+  const startEdit = (g: Goal) => {
+    setEditingId(g.id)
+    setName(g.name); setDescription(g.description ?? ''); setIcon(g.icon ?? ''); setKind(g.kind); setLinkedTripId(g.linkedTripId ?? '')
+    setOpen(true)
+  }
+
+  const save = useMutation({
     mutationFn: () =>
-      GoalsApi.create({
-        name, description: description || undefined, icon: icon || undefined, kind,
-        linkedTripId: kind === GoalKind.TripLink ? linkedTripId || null : null,
-        fieldDefinitions: fields.map((f, i) => ({ ...f, sortOrder: i })),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['goals'] })
-      setOpen(false)
-      setName(''); setDescription(''); setIcon(''); setKind(GoalKind.Checklist); setLinkedTripId(''); setFields([])
-    },
+      editingId
+        ? GoalsApi.update(editingId, {
+            name, description: description || undefined, icon: icon || undefined,
+            linkedTripId: kind === GoalKind.TripLink ? linkedTripId || null : null,
+          })
+        : GoalsApi.create({
+            name, description: description || undefined, icon: icon || undefined, kind,
+            linkedTripId: kind === GoalKind.TripLink ? linkedTripId || null : null,
+            fieldDefinitions: fields.map((f, i) => ({ ...f, sortOrder: i })),
+          }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goals'] }); closeDialog() },
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: string) => GoalsApi.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['goals'] }),
   })
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Goals</h1>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(o) => (o ? setOpen(true) : closeDialog())}>
           <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4" /> New goal</Button>
+            <Button onClick={() => { setEditingId(null); resetForm() }}><Plus className="h-4 w-4" /> New goal</Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Create a goal</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editingId ? 'Edit goal' : 'Create a goal'}</DialogTitle></DialogHeader>
             <div className="flex flex-col gap-3">
               <div className="grid grid-cols-4 gap-2">
                 <div className="col-span-1">
@@ -78,8 +98,8 @@ export function GoalsPage() {
                 <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
               </div>
               <div>
-                <Label>Type</Label>
-                <Select value={String(kind)} onValueChange={(v) => setKind(Number(v))}>
+                <Label>Type{editingId && <span className="text-xs text-muted-foreground"> (can't change after creation)</span>}</Label>
+                <Select value={String(kind)} onValueChange={(v) => setKind(Number(v))} disabled={!!editingId}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value={String(GoalKind.Checklist)}>Checklist of items</SelectItem>
@@ -98,6 +118,8 @@ export function GoalsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              ) : editingId ? (
+                <p className="text-xs text-muted-foreground">Manage custom fields and items from the goal's detail page.</p>
               ) : (
                 <div>
                   <Label>Custom fields per item (optional)</Label>
@@ -129,7 +151,7 @@ export function GoalsPage() {
               )}
             </div>
             <DialogFooter>
-              <Button onClick={() => create.mutate()} disabled={!name || create.isPending}>Create goal</Button>
+              <Button onClick={() => save.mutate()} disabled={!name || save.isPending}>{editingId ? 'Save' : 'Create goal'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -137,10 +159,10 @@ export function GoalsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {goals.map((g) => (
-          <Link to={`/goals/${g.id}`} key={g.id}>
-            <Card className="h-full hover:shadow-md transition-shadow">
+          <Card key={g.id} className="h-full hover:shadow-md transition-shadow relative group">
+            <Link to={`/goals/${g.id}`}>
               <CardContent className="flex flex-col gap-2 p-4">
-                <div className="text-lg font-medium">{g.icon} {g.name}</div>
+                <div className="text-lg font-medium pr-12">{g.icon} {g.name}</div>
                 <p className="text-sm text-muted-foreground line-clamp-2">{g.description}</p>
                 {g.kind === GoalKind.Checklist && (
                   <div className="mt-1">
@@ -151,8 +173,19 @@ export function GoalsPage() {
                   </div>
                 )}
               </CardContent>
-            </Card>
-          </Link>
+            </Link>
+            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100">
+              <button className="rounded-md bg-background/90 p-1.5 border hover:bg-accent" onClick={() => startEdit(g)}>
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                className="rounded-md bg-background/90 p-1.5 border hover:bg-accent"
+                onClick={() => { if (confirm(`Delete "${g.name}"?`)) remove.mutate(g.id) }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </Card>
         ))}
         {goals.length === 0 && <p className="text-sm text-muted-foreground">No goals yet — create one to get started.</p>}
       </div>

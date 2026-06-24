@@ -105,6 +105,19 @@ public class TripsController : ControllerBase
         return NoContent();
     }
 
+    [HttpPut("{id:guid}/stops/reorder")]
+    public async Task<IActionResult> ReorderStops(Guid id, [FromBody] List<Guid> orderedStopIds)
+    {
+        var stops = await _db.TripStops.Where(s => s.TripId == id).ToListAsync();
+        for (var i = 0; i < orderedStopIds.Count; i++)
+        {
+            var stop = stops.FirstOrDefault(s => s.Id == orderedStopIds[i]);
+            if (stop != null) stop.SortOrder = i;
+        }
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     // Bookings
     [HttpGet("{id:guid}/bookings")]
     public async Task<ActionResult<List<BookingDto>>> GetBookings(Guid id)

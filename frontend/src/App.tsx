@@ -1,25 +1,29 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/Layout'
-import { DashboardPage } from '@/pages/DashboardPage'
-import { WishlistPage } from '@/pages/WishlistPage'
-import { WishlistDetailPage } from '@/pages/WishlistDetailPage'
-import { GoalsPage } from '@/pages/GoalsPage'
-import { GoalDetailPage } from '@/pages/GoalDetailPage'
-import { TripsPage } from '@/pages/TripsPage'
-import { TripDetailPage } from '@/pages/TripDetailPage'
+
+const DashboardPage = lazy(() => import('@/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
+const WishlistPage = lazy(() => import('@/pages/WishlistPage').then((m) => ({ default: m.WishlistPage })))
+const WishlistDetailPage = lazy(() => import('@/pages/WishlistDetailPage').then((m) => ({ default: m.WishlistDetailPage })))
+const GoalsPage = lazy(() => import('@/pages/GoalsPage').then((m) => ({ default: m.GoalsPage })))
+const GoalDetailPage = lazy(() => import('@/pages/GoalDetailPage').then((m) => ({ default: m.GoalDetailPage })))
+const TripsPage = lazy(() => import('@/pages/TripsPage').then((m) => ({ default: m.TripsPage })))
+const TripDetailPage = lazy(() => import('@/pages/TripDetailPage').then((m) => ({ default: m.TripDetailPage })))
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/wishlist" element={<WishlistPage />} />
-        <Route path="/wishlist/:id" element={<WishlistDetailPage />} />
-        <Route path="/goals" element={<GoalsPage />} />
-        <Route path="/goals/:id" element={<GoalDetailPage />} />
-        <Route path="/trips" element={<TripsPage />} />
-        <Route path="/trips/:id" element={<TripDetailPage />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/wishlist" element={<WishlistPage />} />
+          <Route path="/wishlist/:id" element={<WishlistDetailPage />} />
+          <Route path="/goals" element={<GoalsPage />} />
+          <Route path="/goals/:id" element={<GoalDetailPage />} />
+          <Route path="/trips" element={<TripsPage />} />
+          <Route path="/trips/:id" element={<TripDetailPage />} />
+        </Route>
+      </Routes>
+    </Suspense>
   )
 }

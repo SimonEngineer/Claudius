@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LocationsApi } from '@/api/resources'
 import { EntityType } from '@/types'
@@ -13,11 +13,17 @@ import { TagPicker } from '@/components/TagPicker'
 import { MediaGallery } from '@/components/MediaGallery'
 import { LocationMap } from '@/components/LocationMap'
 import { Whiteboard } from '@/components/Whiteboard'
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog'
+import { ArrowLeft, Trash2, Pencil } from 'lucide-react'
 
 export function WishlistDetailPage() {
   const { id = '' } = useParams()
+  const navigate = useNavigate()
   const qc = useQueryClient()
+  const [editOpen, setEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', description: '', country: '', lat: '', lng: '' })
 
   const { data: location } = useQuery({ queryKey: ['location', id], queryFn: () => LocationsApi.get(id) })
   const { data: notes = [] } = useQuery({ queryKey: ['location', id, 'notes'], queryFn: () => LocationsApi.notes(id) })
@@ -54,6 +60,17 @@ export function WishlistDetailPage() {
     mutationFn: (contentJson: string) => LocationsApi.putWhiteboard(id, { contentJson }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['location', id, 'whiteboard'] }),
   })
+  const updateLocation = useMutation({
+    mutationFn: () => LocationsApi.update(id, {
+      name: editForm.name, description: editForm.description || null, country: editForm.country || null,
+      lat: editForm.lat ? parseFloat(editForm.lat) : null, lng: editForm.lng ? parseFloat(editForm.lng) : null,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['location', id] }); setEditOpen(false) },
+  })
+  const removeLocation = useMutation({
+    mutationFn: () => LocationsApi.remove(id),
+    onSuccess: () => navigate('/wishlist'),
+  })
 
   if (!location) return null
   const effectivePlan = planForm ?? plan ?? {}
@@ -64,9 +81,42 @@ export function WishlistDetailPage() {
         <ArrowLeft className="h-4 w-4" /> Back to wishlist
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-bold">{location.name}</h1>
-        <p className="text-muted-foreground">{location.country}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{location.name}</h1>
+          <p className="text-muted-foreground">{location.country}</p>
+        </div>
+        <div className="flex gap-2">
+          <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); if (o) setEditForm({ name: location.name, description: location.description ?? '', country: location.country ?? '', lat: location.lat?.toString() ?? '', lng: location.lng?.toString() ?? '' }) }}>
+            <Button variant="outline" size="icon" onClick={() => setEditOpen(true)}><Pencil className="h-4 w-4" /></Button>
+            <DialogContent className="max-h-[85vh] overflow-y-auto">
+              <DialogHeader><DialogTitle>Edit location</DialogTitle></DialogHeader>
+              <div className="flex flex-col gap-3">
+                <div><Label>Name</Label><Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
+                <div><Label>Description</Label><Textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></div>
+                <div><Label>Country</Label><Input value={editForm.country} onChange={(e) => setEditForm({ ...editForm, country: e.target.value })} /></div>
+                <div>
+                  <Label>Click the map to set location</Label>
+                  <LocationMap
+                    height={220}
+                    pins={editForm.lat && editForm.lng ? [{ id: 'pick', lat: parseFloat(editForm.lat), lng: parseFloat(editForm.lng), label: editForm.name }] : []}
+                    center={editForm.lat && editForm.lng ? [parseFloat(editForm.lat), parseFloat(editForm.lng)] : undefined}
+                    zoom={editForm.lat && editForm.lng ? 8 : 2}
+                    onPick={(lat, lng) => setEditForm({ ...editForm, lat: lat.toFixed(5), lng: lng.toFixed(5) })}
+                  />
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div><Label className="text-xs">Lat</Label><Input value={editForm.lat} onChange={(e) => setEditForm({ ...editForm, lat: e.target.value })} /></div>
+                    <div><Label className="text-xs">Lng</Label><Input value={editForm.lng} onChange={(e) => setEditForm({ ...editForm, lng: e.target.value })} /></div>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter><Button onClick={() => updateLocation.mutate()} disabled={!editForm.name}>Save</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button variant="outline" size="icon" onClick={() => { if (confirm(`Delete "${location.name}"? This removes all its notes, links, media and plan.`)) removeLocation.mutate() }}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <TagPicker entityType={EntityType.WishlistLocation} entityId={id} selected={location.tags} onChange={() => qc.invalidateQueries({ queryKey: ['location', id] })} />
