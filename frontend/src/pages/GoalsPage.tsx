@@ -1,17 +1,19 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { GoalsApi, TripsApi } from '@/api/resources'
+import { GoalsApi, TripsApi, TagsApi } from '@/api/resources'
 import { GoalKind, GoalFieldType, type GoalFieldTypeValue } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { useToast, getErrorMessage } from '@/components/ui/toast'
 import { Plus, Trash2, Pencil } from 'lucide-react'
 import type { Goal } from '@/types'
 
@@ -35,10 +37,19 @@ export function GoalsPage() {
   const [kind, setKind] = useState<number>(GoalKind.Checklist)
   const [linkedTripId, setLinkedTripId] = useState<string>('')
   const [fields, setFields] = useState<FieldDraft[]>([])
+  const [tagFilter, setTagFilter] = useState<string>('all')
   const qc = useQueryClient()
+  const { showError } = useToast()
+  const onErr = (err: unknown) => showError(getErrorMessage(err))
 
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: GoalsApi.list })
   const { data: trips = [] } = useQuery({ queryKey: ['trips'], queryFn: TripsApi.list })
+  const { data: tags = [] } = useQuery({ queryKey: ['tags'], queryFn: TagsApi.list })
+
+  const filteredGoals = useMemo(
+    () => (tagFilter === 'all' ? goals : goals.filter((g) => g.tags.some((t) => t.id === tagFilter))),
+    [goals, tagFilter]
+  )
 
   const resetForm = () => {
     setName(''); setDescription(''); setIcon(''); setKind(GoalKind.Checklist); setLinkedTripId(''); setFields([])
@@ -65,17 +76,27 @@ export function GoalsPage() {
             fieldDefinitions: fields.map((f, i) => ({ ...f, sortOrder: i })),
           }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['goals'] }); closeDialog() },
+    onError: onErr,
   })
 
   const remove = useMutation({
     mutationFn: (id: string) => GoalsApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['goals'] }),
+    onError: onErr,
   })
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Goals</h1>
+        <div className="flex gap-2">
+        <Select value={tagFilter} onValueChange={setTagFilter}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Filter by tag" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All tags</SelectItem>
+            {tags.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Dialog open={open} onOpenChange={(o) => (o ? setOpen(true) : closeDialog())}>
           <DialogTrigger asChild>
             <Button onClick={() => { setEditingId(null); resetForm() }}><Plus className="h-4 w-4" /> New goal</Button>
@@ -155,15 +176,21 @@ export function GoalsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {goals.map((g) => (
+        {filteredGoals.map((g) => (
           <Card key={g.id} className="h-full hover:shadow-md transition-shadow relative group">
             <Link to={`/goals/${g.id}`}>
               <CardContent className="flex flex-col gap-2 p-4">
                 <div className="text-lg font-medium pr-12">{g.icon} {g.name}</div>
                 <p className="text-sm text-muted-foreground line-clamp-2">{g.description}</p>
+                {g.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {g.tags.map((t) => <Badge key={t.id} style={{ backgroundColor: t.color, color: 'white' }}>{t.name}</Badge>)}
+                  </div>
+                )}
                 {g.kind === GoalKind.Checklist && (
                   <div className="mt-1">
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -187,7 +214,7 @@ export function GoalsPage() {
             </div>
           </Card>
         ))}
-        {goals.length === 0 && <p className="text-sm text-muted-foreground">No goals yet — create one to get started.</p>}
+        {filteredGoals.length === 0 && <p className="text-sm text-muted-foreground">No goals match.</p>}
       </div>
     </div>
   )

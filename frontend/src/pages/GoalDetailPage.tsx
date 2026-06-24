@@ -17,7 +17,8 @@ import {
 import { TagPicker } from '@/components/TagPicker'
 import { MediaGallery } from '@/components/MediaGallery'
 import { LocationMap } from '@/components/LocationMap'
-import { ArrowLeft, Plus, Trash2, Settings, MapPin } from 'lucide-react'
+import { useToast, getErrorMessage } from '@/components/ui/toast'
+import { ArrowLeft, Plus, Trash2, Settings, MapPin, Pencil } from 'lucide-react'
 
 const FIELD_TYPE_LABELS: Record<GoalFieldTypeValue, string> = {
   [GoalFieldType.Text]: 'Text',
@@ -36,26 +37,51 @@ export function GoalDetailPage() {
   const [newField, setNewField] = useState({ label: '', fieldType: GoalFieldType.Text as GoalFieldTypeValue })
   const [itemDraft, setItemDraft] = useState<Record<string, string>>({})
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const { showError } = useToast()
+  const onErr = (err: unknown) => showError(getErrorMessage(err))
 
   const { data: goal } = useQuery({ queryKey: ['goal', id], queryFn: () => GoalsApi.get(id) })
   const { data: items = [] } = useQuery({ queryKey: ['goal', id, 'items'], queryFn: () => GoalsApi.items(id) })
 
-  const addItem = useMutation({
+  const closeItemDialog = () => { setAddOpen(false); setItemDraft({}); setEditingItemId(null) }
+
+  const startEditItem = (item: GoalItem) => {
+    setEditingItemId(item.id)
+    setItemDraft({
+      name: item.name,
+      lat: item.lat?.toString() ?? '',
+      lng: item.lng?.toString() ?? '',
+      ...Object.fromEntries(item.fieldValues.map((v) => [v.goalFieldDefinitionId, v.value ?? ''])),
+    })
+    setAddOpen(true)
+  }
+
+  const saveItem = useMutation({
     mutationFn: () => {
       const { name, lat, lng, ...rest } = itemDraft
-      return GoalsApi.addItem(id, {
+      const payload = {
         name: name ?? '',
         lat: lat ? parseFloat(lat) : null,
         lng: lng ? parseFloat(lng) : null,
         fieldValues: Object.entries(rest).map(([fid, value]) => ({ goalFieldDefinitionId: fid, value })),
-      })
+      }
+      return editingItemId ? GoalsApi.updateItem(editingItemId, payload) : GoalsApi.addItem(id, payload)
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', id, 'items'] }); setAddOpen(false); setItemDraft({}) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', id, 'items'] }); closeItemDialog() },
+    onError: onErr,
+  })
+
+  const removeItem = useMutation({
+    mutationFn: (itemId: string) => GoalsApi.removeItem(itemId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', id, 'items'] }); setActiveItemId(null) },
+    onError: onErr,
   })
 
   const toggleComplete = useMutation({
     mutationFn: ({ itemId, completed }: { itemId: string; completed: boolean }) => GoalsApi.completeItem(itemId, completed),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['goal', id, 'items'] }),
+    onError: onErr,
   })
 
   const addField = useMutation({
@@ -64,11 +90,13 @@ export function GoalDetailPage() {
       fieldType: newField.fieldType, sortOrder: goal?.fieldDefinitions.length ?? 0,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', id] }); setNewField({ label: '', fieldType: GoalFieldType.Text }) },
+    onError: onErr,
   })
 
   const removeField = useMutation({
     mutationFn: (fieldId: string) => GoalsApi.removeField(fieldId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['goal', id] }),
+    onError: onErr,
   })
 
   if (!goal) return null
@@ -129,10 +157,10 @@ export function GoalDetailPage() {
                   </div>
                 </DialogContent>
               </Dialog>
-              <Dialog open={addOpen} onOpenChange={setAddOpen}>
-                <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4" /> Add item</Button></DialogTrigger>
+              <Dialog open={addOpen} onOpenChange={(o) => (o ? setAddOpen(true) : closeItemDialog())}>
+                <DialogTrigger asChild><Button size="sm" onClick={() => { setEditingItemId(null); setItemDraft({}) }}><Plus className="h-4 w-4" /> Add item</Button></DialogTrigger>
                 <DialogContent className="max-h-[85vh] overflow-y-auto">
-                  <DialogHeader><DialogTitle>Add item</DialogTitle></DialogHeader>
+                  <DialogHeader><DialogTitle>{editingItemId ? 'Edit item' : 'Add item'}</DialogTitle></DialogHeader>
                   <div className="flex flex-col gap-3">
                     <div>
                       <Label>Name</Label>
@@ -164,7 +192,7 @@ export function GoalDetailPage() {
                     ))}
                   </div>
                   <DialogFooter>
-                    <Button onClick={() => addItem.mutate()} disabled={!itemDraft.name}>Add</Button>
+                    <Button onClick={() => saveItem.mutate()} disabled={!itemDraft.name}>{editingItemId ? 'Save' : 'Add'}</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -178,6 +206,7 @@ export function GoalDetailPage() {
                   <th className="p-2 w-10"></th>
                   <th className="p-2">Name</th>
                   {goal.fieldDefinitions.map((f) => <th className="p-2" key={f.id}>{f.label}</th>)}
+                  <th className="p-2 w-16"></th>
                 </tr>
               </thead>
               <tbody>
@@ -190,9 +219,15 @@ export function GoalDetailPage() {
                     {goal.fieldDefinitions.map((f) => (
                       <td className="p-2" key={f.id}>{item.fieldValues.find((v) => v.goalFieldDefinitionId === f.id)?.value}</td>
                     ))}
+                    <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-1">
+                        <button onClick={() => startEditItem(item)}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                        <button onClick={() => { if (confirm(`Delete "${item.name}"?`)) removeItem.mutate(item.id) }}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
-                {items.length === 0 && <tr><td colSpan={2 + goal.fieldDefinitions.length} className="p-4 text-center text-muted-foreground">No items yet.</td></tr>}
+                {items.length === 0 && <tr><td colSpan={3 + goal.fieldDefinitions.length} className="p-4 text-center text-muted-foreground">No items yet.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -202,7 +237,14 @@ export function GoalDetailPage() {
       {activeItem && (
         <Dialog open onOpenChange={(o) => !o && setActiveItemId(null)}>
           <DialogContent>
-            <ItemDrawer goalId={id} item={activeItem} fieldDefinitions={goal.fieldDefinitions} onToggle={(completed) => toggleComplete.mutate({ itemId: activeItem.id, completed })} />
+            <ItemDrawer
+              goalId={id}
+              item={activeItem}
+              fieldDefinitions={goal.fieldDefinitions}
+              onToggle={(completed) => toggleComplete.mutate({ itemId: activeItem.id, completed })}
+              onEdit={() => { setActiveItemId(null); startEditItem(activeItem) }}
+              onDelete={() => removeItem.mutate(activeItem.id)}
+            />
           </DialogContent>
         </Dialog>
       )}
@@ -211,27 +253,37 @@ export function GoalDetailPage() {
 }
 
 function ItemDrawer({
-  goalId, item, fieldDefinitions, onToggle,
-}: { goalId: string; item: GoalItem; fieldDefinitions: { id: string; label: string }[]; onToggle: (completed: boolean) => void }) {
+  goalId, item, fieldDefinitions, onToggle, onEdit, onDelete,
+}: { goalId: string; item: GoalItem; fieldDefinitions: { id: string; label: string }[]; onToggle: (completed: boolean) => void; onEdit: () => void; onDelete: () => void }) {
   const qc = useQueryClient()
   const [noteText, setNoteText] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
+  const { showError } = useToast()
+  const onErr = (err: unknown) => showError(getErrorMessage(err))
 
   const addNote = useMutation({
     mutationFn: () => GoalsApi.addItemNote(item.id, noteText),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] }); setNoteText('') },
+    onError: onErr,
   })
   const addLink = useMutation({
     mutationFn: () => GoalsApi.addItemLink(item.id, linkUrl),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] }); setLinkUrl('') },
+    onError: onErr,
   })
 
   return (
     <div className="flex flex-col gap-4">
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <Checkbox checked={item.isCompleted} onCheckedChange={(c) => onToggle(!!c)} />
-          {item.name}
+        <DialogTitle className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            <Checkbox checked={item.isCompleted} onCheckedChange={(c) => onToggle(!!c)} />
+            {item.name}
+          </span>
+          <span className="flex items-center gap-1">
+            <button onClick={onEdit}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
+            <button onClick={() => { if (confirm(`Delete "${item.name}"?`)) onDelete() }}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+          </span>
         </DialogTitle>
       </DialogHeader>
 

@@ -152,6 +152,7 @@ export interface TripStop {
   isStart: boolean
   isEnd: boolean
   notes?: string | null
+  sourceLocationId?: string | null
 }
 
 export const BookingType = { Flight: 1, Hotel: 2, CarRental: 3, Ticket: 4, Other: 5 } as const
@@ -166,6 +167,19 @@ export interface Booking {
   lat?: number | null
   lng?: number | null
   detailsJson?: string | null
+  cost?: number | null
+}
+
+export interface PackingItem {
+  id: string
+  name: string
+  isPacked: boolean
+}
+
+export interface TripLink {
+  tripId: string
+  tripName: string
+  stopId: string
 }
 
 export const TimelineEntryType = { Note: 1, Photo: 2, Video: 3, Url: 4 } as const

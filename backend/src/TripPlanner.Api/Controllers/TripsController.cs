@@ -66,7 +66,7 @@ public class TripsController : ControllerBase
     [HttpGet("{id:guid}/stops")]
     public async Task<ActionResult<List<TripStopDto>>> GetStops(Guid id)
         => await _db.TripStops.Where(s => s.TripId == id).OrderBy(s => s.SortOrder)
-            .Select(s => new TripStopDto(s.Id, s.Name, s.Lat, s.Lng, s.ArriveDate, s.DepartDate, s.SortOrder, s.IsStart, s.IsEnd, s.Notes)).ToListAsync();
+            .Select(s => new TripStopDto(s.Id, s.Name, s.Lat, s.Lng, s.ArriveDate, s.DepartDate, s.SortOrder, s.IsStart, s.IsEnd, s.Notes, s.SourceLocationId)).ToListAsync();
 
     [HttpPost("{id:guid}/stops")]
     public async Task<ActionResult<TripStopDto>> AddStop(Guid id, TripStopCreateDto dto)
@@ -77,11 +77,11 @@ public class TripsController : ControllerBase
         {
             TripId = id, Name = dto.Name, Lat = dto.Lat, Lng = dto.Lng,
             ArriveDate = dto.ArriveDate, DepartDate = dto.DepartDate, SortOrder = dto.SortOrder,
-            IsStart = dto.IsStart, IsEnd = dto.IsEnd, Notes = dto.Notes,
+            IsStart = dto.IsStart, IsEnd = dto.IsEnd, Notes = dto.Notes, SourceLocationId = dto.SourceLocationId,
         };
         _db.TripStops.Add(stop);
         await _db.SaveChangesAsync();
-        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes);
+        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes, stop.SourceLocationId);
     }
 
     [HttpPut("stops/{stopId:guid}")]
@@ -92,7 +92,7 @@ public class TripsController : ControllerBase
         stop.Name = dto.Name; stop.Lat = dto.Lat; stop.Lng = dto.Lng; stop.ArriveDate = dto.ArriveDate;
         stop.DepartDate = dto.DepartDate; stop.SortOrder = dto.SortOrder; stop.IsStart = dto.IsStart; stop.IsEnd = dto.IsEnd; stop.Notes = dto.Notes;
         await _db.SaveChangesAsync();
-        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes);
+        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes, stop.SourceLocationId);
     }
 
     [HttpDelete("stops/{stopId:guid}")]
@@ -122,7 +122,7 @@ public class TripsController : ControllerBase
     [HttpGet("{id:guid}/bookings")]
     public async Task<ActionResult<List<BookingDto>>> GetBookings(Guid id)
         => await _db.Bookings.Where(b => b.TripId == id).OrderBy(b => b.StartAt)
-            .Select(b => new BookingDto(b.Id, b.Type, b.Title, b.ConfirmationNumber, b.StartAt, b.EndAt, b.Lat, b.Lng, b.DetailsJson)).ToListAsync();
+            .Select(b => new BookingDto(b.Id, b.Type, b.Title, b.ConfirmationNumber, b.StartAt, b.EndAt, b.Lat, b.Lng, b.DetailsJson, b.Cost)).ToListAsync();
 
     [HttpPost("{id:guid}/bookings")]
     public async Task<ActionResult<BookingDto>> AddBooking(Guid id, BookingCreateDto dto)
@@ -132,11 +132,11 @@ public class TripsController : ControllerBase
         var booking = new Booking
         {
             TripId = id, Type = dto.Type, Title = dto.Title, ConfirmationNumber = dto.ConfirmationNumber,
-            StartAt = dto.StartAt, EndAt = dto.EndAt, Lat = dto.Lat, Lng = dto.Lng, DetailsJson = dto.DetailsJson,
+            StartAt = dto.StartAt, EndAt = dto.EndAt, Lat = dto.Lat, Lng = dto.Lng, DetailsJson = dto.DetailsJson, Cost = dto.Cost,
         };
         _db.Bookings.Add(booking);
         await _db.SaveChangesAsync();
-        return new BookingDto(booking.Id, booking.Type, booking.Title, booking.ConfirmationNumber, booking.StartAt, booking.EndAt, booking.Lat, booking.Lng, booking.DetailsJson);
+        return new BookingDto(booking.Id, booking.Type, booking.Title, booking.ConfirmationNumber, booking.StartAt, booking.EndAt, booking.Lat, booking.Lng, booking.DetailsJson, booking.Cost);
     }
 
     [HttpPut("bookings/{bookingId:guid}")]
@@ -145,9 +145,9 @@ public class TripsController : ControllerBase
         var booking = await _db.Bookings.FindAsync(bookingId);
         if (booking == null) return NotFound();
         booking.Type = dto.Type; booking.Title = dto.Title; booking.ConfirmationNumber = dto.ConfirmationNumber;
-        booking.StartAt = dto.StartAt; booking.EndAt = dto.EndAt; booking.Lat = dto.Lat; booking.Lng = dto.Lng; booking.DetailsJson = dto.DetailsJson;
+        booking.StartAt = dto.StartAt; booking.EndAt = dto.EndAt; booking.Lat = dto.Lat; booking.Lng = dto.Lng; booking.DetailsJson = dto.DetailsJson; booking.Cost = dto.Cost;
         await _db.SaveChangesAsync();
-        return new BookingDto(booking.Id, booking.Type, booking.Title, booking.ConfirmationNumber, booking.StartAt, booking.EndAt, booking.Lat, booking.Lng, booking.DetailsJson);
+        return new BookingDto(booking.Id, booking.Type, booking.Title, booking.ConfirmationNumber, booking.StartAt, booking.EndAt, booking.Lat, booking.Lng, booking.DetailsJson, booking.Cost);
     }
 
     [HttpDelete("bookings/{bookingId:guid}")]
@@ -198,6 +198,43 @@ public class TripsController : ControllerBase
         var entry = await _db.TimelineEntries.FindAsync(entryId);
         if (entry == null) return NotFound();
         _db.TimelineEntries.Remove(entry);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Packing list
+    [HttpGet("{id:guid}/packing")]
+    public async Task<ActionResult<List<PackingItemDto>>> GetPackingItems(Guid id)
+        => await _db.PackingItems.Where(p => p.TripId == id).OrderBy(p => p.CreatedAt)
+            .Select(p => new PackingItemDto(p.Id, p.Name, p.IsPacked)).ToListAsync();
+
+    [HttpPost("{id:guid}/packing")]
+    public async Task<ActionResult<PackingItemDto>> AddPackingItem(Guid id, PackingItemCreateDto dto)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        var item = new PackingItem { TripId = id, Name = dto.Name };
+        _db.PackingItems.Add(item);
+        await _db.SaveChangesAsync();
+        return new PackingItemDto(item.Id, item.Name, item.IsPacked);
+    }
+
+    [HttpPost("packing/{itemId:guid}/toggle")]
+    public async Task<ActionResult<PackingItemDto>> TogglePackingItem(Guid itemId, [FromQuery] bool packed)
+    {
+        var item = await _db.PackingItems.FindAsync(itemId);
+        if (item == null) return NotFound();
+        item.IsPacked = packed;
+        await _db.SaveChangesAsync();
+        return new PackingItemDto(item.Id, item.Name, item.IsPacked);
+    }
+
+    [HttpDelete("packing/{itemId:guid}")]
+    public async Task<IActionResult> DeletePackingItem(Guid itemId)
+    {
+        var item = await _db.PackingItems.FindAsync(itemId);
+        if (item == null) return NotFound();
+        _db.PackingItems.Remove(item);
         await _db.SaveChangesAsync();
         return NoContent();
     }

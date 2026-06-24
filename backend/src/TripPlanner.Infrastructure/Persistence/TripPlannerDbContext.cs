@@ -28,6 +28,7 @@ public class TripPlannerDbContext : DbContext
     public DbSet<TripStop> TripStops => Set<TripStop>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<TimelineEntry> TimelineEntries => Set<TimelineEntry>();
+    public DbSet<PackingItem> PackingItems => Set<PackingItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +81,7 @@ public class TripPlannerDbContext : DbContext
             b.HasMany(t => t.Stops).WithOne(s => s.Trip).HasForeignKey(s => s.TripId).OnDelete(DeleteBehavior.Cascade);
             b.HasMany(t => t.Bookings).WithOne(s => s.Trip).HasForeignKey(s => s.TripId).OnDelete(DeleteBehavior.Cascade);
             b.HasMany(t => t.Timeline).WithOne(s => s.Trip).HasForeignKey(s => s.TripId).OnDelete(DeleteBehavior.Cascade);
+            b.HasMany(t => t.PackingItems).WithOne(p => p.Trip).HasForeignKey(p => p.TripId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

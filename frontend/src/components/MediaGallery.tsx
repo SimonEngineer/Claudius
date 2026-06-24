@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { MediaApi } from '@/api/resources'
 import { MediaKind, type EntityTypeValue } from '@/types'
+import { useToast, getErrorMessage } from '@/components/ui/toast'
 import { ImagePlus, Trash2, Video } from 'lucide-react'
 
 interface MediaGalleryProps {
@@ -12,6 +13,8 @@ interface MediaGalleryProps {
 export function MediaGallery({ entityType, entityId }: MediaGalleryProps) {
   const qc = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
+  const { showError } = useToast()
+  const onErr = (err: unknown) => showError(getErrorMessage(err))
   const { data: media = [] } = useQuery({
     queryKey: ['media', entityType, entityId],
     queryFn: () => MediaApi.list(entityType, entityId),
@@ -24,11 +27,13 @@ export function MediaGallery({ entityType, entityId }: MediaGalleryProps) {
       return MediaApi.create({ entityType, entityId, kind, url, capturedAt: new Date().toISOString() })
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['media', entityType, entityId] }),
+    onError: onErr,
   })
 
   const remove = useMutation({
     mutationFn: (id: string) => MediaApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['media', entityType, entityId] }),
+    onError: onErr,
   })
 
   return (

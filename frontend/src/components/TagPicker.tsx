@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { TagsApi } from '@/api/resources'
 import type { Tag, EntityTypeValue } from '@/types'
+import { useToast, getErrorMessage } from '@/components/ui/toast'
 import { X, Plus } from 'lucide-react'
 
 interface TagPickerProps {
@@ -17,6 +18,8 @@ interface TagPickerProps {
 export function TagPicker({ entityType, entityId, selected, onChange }: TagPickerProps) {
   const [input, setInput] = useState('')
   const qc = useQueryClient()
+  const { showError } = useToast()
+  const onErr = (err: unknown) => showError(getErrorMessage(err))
   const { data: allTags = [] } = useQuery({ queryKey: ['tags'], queryFn: TagsApi.list })
 
   const assign = useMutation({
@@ -29,11 +32,13 @@ export function TagPicker({ entityType, entityId, selected, onChange }: TagPicke
       onChange?.()
       setInput('')
     },
+    onError: onErr,
   })
 
   const unassign = useMutation({
     mutationFn: (tagId: string) => TagsApi.unassign(tagId, entityType, entityId),
     onSuccess: () => onChange?.(),
+    onError: onErr,
   })
 
   const suggestions = allTags.filter(

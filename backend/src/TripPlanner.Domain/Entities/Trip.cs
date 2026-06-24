@@ -13,6 +13,7 @@ public class Trip : EntityBase
     public ICollection<TripStop> Stops { get; set; } = new List<TripStop>();
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
     public ICollection<TimelineEntry> Timeline { get; set; } = new List<TimelineEntry>();
+    public ICollection<PackingItem> PackingItems { get; set; } = new List<PackingItem>();
 }
 
 public class TripStop : EntityBase
@@ -28,6 +29,8 @@ public class TripStop : EntityBase
     public bool IsStart { get; set; }
     public bool IsEnd { get; set; }
     public string? Notes { get; set; }
+    /// <summary>The wishlist location this stop was created from, if any.</summary>
+    public Guid? SourceLocationId { get; set; }
 }
 
 public class Booking : EntityBase
@@ -43,6 +46,15 @@ public class Booking : EntityBase
     public double? Lng { get; set; }
     /// <summary>Type-specific structured details (airline/flight no, hotel address, car class, etc.) as JSON.</summary>
     public string? DetailsJson { get; set; }
+    public decimal? Cost { get; set; }
+}
+
+public class PackingItem : EntityBase
+{
+    public Guid TripId { get; set; }
+    public Trip Trip { get; set; } = null!;
+    public string Name { get; set; } = string.Empty;
+    public bool IsPacked { get; set; }
 }
 
 public class TimelineEntry : EntityBase

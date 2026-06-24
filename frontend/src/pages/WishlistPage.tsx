@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { LocationsApi } from '@/api/resources'
+import { LocationsApi, TagsApi } from '@/api/resources'
 import type { WishlistLocation } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -12,6 +12,8 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { useToast, getErrorMessage } from '@/components/ui/toast'
 import { LocationMap } from '@/components/LocationMap'
 import { List, Map as MapIcon, Plus, Pencil, Trash2, MapPin } from 'lucide-react'
 
@@ -22,9 +24,13 @@ export function WishlistPage() {
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [tagFilter, setTagFilter] = useState<string>('all')
   const qc = useQueryClient()
+  const { showError } = useToast()
+  const onErr = (err: unknown) => showError(getErrorMessage(err))
 
   const { data: locations = [] } = useQuery({ queryKey: ['locations'], queryFn: LocationsApi.list })
+  const { data: tags = [] } = useQuery({ queryKey: ['tags'], queryFn: TagsApi.list })
 
   const closeDialog = () => { setOpen(false); setEditingId(null); setForm(EMPTY_FORM) }
 
@@ -40,12 +46,19 @@ export function WishlistPage() {
       return editingId ? LocationsApi.update(editingId, payload) : LocationsApi.create(payload)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['locations'] }); closeDialog() },
+    onError: onErr,
   })
 
   const remove = useMutation({
     mutationFn: (id: string) => LocationsApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['locations'] }),
+    onError: onErr,
   })
+
+  const filteredLocations = useMemo(
+    () => (tagFilter === 'all' ? locations : locations.filter((l) => l.tags.some((t) => t.id === tagFilter))),
+    [locations, tagFilter]
+  )
 
   const startEdit = (l: WishlistLocation) => {
     setEditingId(l.id)
@@ -54,8 +67,8 @@ export function WishlistPage() {
   }
 
   const pins = useMemo(
-    () => locations.filter((l) => l.lat != null && l.lng != null).map((l) => ({ id: l.id, lat: l.lat!, lng: l.lng!, label: l.name })),
-    [locations]
+    () => filteredLocations.filter((l) => l.lat != null && l.lng != null).map((l) => ({ id: l.id, lat: l.lat!, lng: l.lng!, label: l.name })),
+    [filteredLocations]
   )
 
   return (
@@ -63,6 +76,13 @@ export function WishlistPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Wishlist</h1>
         <div className="flex gap-2">
+          <Select value={tagFilter} onValueChange={setTagFilter}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Filter by tag" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All tags</SelectItem>
+              {tags.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <Button variant={view === 'list' ? 'default' : 'outline'} size="icon" onClick={() => setView('list')}>
             <List className="h-4 w-4" />
           </Button>
@@ -115,7 +135,7 @@ export function WishlistPage() {
         <LocationMap pins={pins} height={500} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {locations.map((l) => (
+          {filteredLocations.map((l) => (
             <Card key={l.id} className="h-full hover:shadow-md transition-shadow relative group">
               <Link to={`/wishlist/${l.id}`}>
                 <CardContent className="flex flex-col gap-1 p-4">
@@ -142,7 +162,7 @@ export function WishlistPage() {
               </div>
             </Card>
           ))}
-          {locations.length === 0 && <p className="text-sm text-muted-foreground">No wishlist locations yet.</p>}
+          {filteredLocations.length === 0 && <p className="text-sm text-muted-foreground">No wishlist locations match.</p>}
         </div>
       )}
     </div>

@@ -164,6 +164,12 @@ public class LocationsController : ControllerBase
         return dto;
     }
 
+    // Trip links
+    [HttpGet("{id:guid}/trip-links")]
+    public async Task<ActionResult<List<TripLinkDto>>> GetTripLinks(Guid id)
+        => await _db.TripStops.Where(s => s.SourceLocationId == id)
+            .Select(s => new TripLinkDto(s.TripId, s.Trip.Name, s.Id)).ToListAsync();
+
     private static WishlistLocationDto ToDto(WishlistLocation l, List<TagDto> tags) =>
         new(l.Id, l.Name, l.Description, l.Country, l.Lat, l.Lng, l.CreatedAt, tags);
 }

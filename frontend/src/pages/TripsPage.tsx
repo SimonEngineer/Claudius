@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { useToast, getErrorMessage } from '@/components/ui/toast'
 
 const STATUS_LABEL: Record<number, string> = { [TripStatus.Planning]: 'Planning', [TripStatus.Active]: 'Active', [TripStatus.Completed]: 'Completed' }
 
@@ -32,6 +33,8 @@ export function TripsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const qc = useQueryClient()
+  const { showError } = useToast()
+  const onErr = (err: unknown) => showError(getErrorMessage(err))
   const { data: trips = [] } = useQuery({ queryKey: ['trips'], queryFn: TripsApi.list })
 
   const closeDialog = () => { setOpen(false); setEditingId(null); setForm(EMPTY_FORM) }
@@ -45,11 +48,13 @@ export function TripsPage() {
       return editingId ? TripsApi.update(editingId, payload) : TripsApi.create(payload)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trips'] }); closeDialog() },
+    onError: onErr,
   })
 
   const remove = useMutation({
     mutationFn: (id: string) => TripsApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['trips'] }),
+    onError: onErr,
   })
 
   const startEdit = (t: Trip) => {

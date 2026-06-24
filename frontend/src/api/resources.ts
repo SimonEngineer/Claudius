@@ -3,6 +3,7 @@ import type {
   Tag, WishlistLocation, WishlistNote, WishlistLink, WishlistPlan, Whiteboard,
   Goal, GoalFieldDefinition, GoalItem, GoalItemFieldValue,
   Trip, TripStop, Booking, TimelineEntry, MediaItem, EntityTypeValue, GoalFieldTypeValue,
+  PackingItem, TripLink,
 } from '@/types'
 
 // Tags
@@ -51,6 +52,8 @@ export const LocationsApi = {
 
   getWhiteboard: (id: string) => api.get<Whiteboard>(`/locations/${id}/whiteboard`).then((r) => r.data),
   putWhiteboard: (id: string, data: Whiteboard) => api.put<Whiteboard>(`/locations/${id}/whiteboard`, data).then((r) => r.data),
+
+  tripLinks: (id: string) => api.get<TripLink[]>(`/locations/${id}/trip-links`).then((r) => r.data),
 }
 
 // Goals
@@ -101,4 +104,9 @@ export const TripsApi = {
   addTimelineEntry: (id: string, data: { type: number; content?: string; lat?: number | null; lng?: number | null; capturedAt?: string | null }) =>
     api.post<TimelineEntry>(`/trips/${id}/timeline`, data).then((r) => r.data),
   removeTimelineEntry: (entryId: string) => api.delete(`/trips/timeline/${entryId}`),
+
+  packing: (id: string) => api.get<PackingItem[]>(`/trips/${id}/packing`).then((r) => r.data),
+  addPackingItem: (id: string, name: string) => api.post<PackingItem>(`/trips/${id}/packing`, { name }).then((r) => r.data),
+  togglePackingItem: (itemId: string, packed: boolean) => api.post<PackingItem>(`/trips/packing/${itemId}/toggle?packed=${packed}`).then((r) => r.data),
+  removePackingItem: (itemId: string) => api.delete(`/trips/packing/${itemId}`),
 }
