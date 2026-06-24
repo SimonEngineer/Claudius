@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NameTags.Api.Dtos;
@@ -109,47 +110,90 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
     [HttpGet("{id:int}/names/{nameId:int}/download.stl")]
     public Task<IActionResult> Download(int id, int nameId) => GenerateStl(id, nameId, asAttachment: true);
 
+    /// <summary>
+    /// Streams every name's STL into a single zip without buffering the archive or any
+    /// individual mesh in memory beyond one entry at a time -- important at the ~100-name
+    /// scale this is meant for. Pass nameIds to export a subset; omit it to export all names.
+    /// </summary>
+    [HttpGet("{id:int}/export.zip")]
+    public async Task<IActionResult> ExportZip(int id, [FromQuery] string? nameIds)
+    {
+        var project = await db.TagProjects.Include(p => p.Names).Include(p => p.MountingHoles).FirstOrDefaultAsync(p => p.Id == id);
+        if (project is null) return NotFound();
+
+        var names = project.Names.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(nameIds))
+        {
+            var requestedIds = nameIds.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Select(int.Parse)
+                .ToHashSet();
+            names = names.Where(n => requestedIds.Contains(n.Id));
+        }
+        var nameList = names.ToList();
+        if (nameList.Count == 0) return NotFound();
+
+        Response.ContentType = "application/zip";
+        Response.Headers.ContentDisposition = $"attachment; filename=\"{SanitizeFileName(project.Name)}.zip\"";
+
+        using var archive = new ZipArchive(Response.BodyWriter.AsStream(), ZipArchiveMode.Create);
+        var usedFileNames = new HashSet<string>();
+        foreach (var name in nameList)
+        {
+            var fileName = $"{SanitizeFileName(name.Text)}.stl";
+            while (!usedFileNames.Add(fileName))
+            {
+                fileName = $"{SanitizeFileName(name.Text)}-{name.Id}.stl";
+            }
+
+            var entry = archive.CreateEntry(fileName, CompressionLevel.Fastest);
+            await using var entryStream = entry.Open();
+            var mesh = _generationService.GenerateTagMesh(BuildRequest(project, name));
+            StlWriter.WriteBinary(entryStream, mesh);
+        }
+
+        return new EmptyResult();
+    }
+
     private async Task<IActionResult> GenerateStl(int id, int nameId, bool asAttachment)
     {
-        var project = await db.TagProjects.Include(p => p.Names).FirstOrDefaultAsync(p => p.Id == id);
+        var project = await db.TagProjects.Include(p => p.Names).Include(p => p.MountingHoles).FirstOrDefaultAsync(p => p.Id == id);
         if (project is null) return NotFound();
 
         var name = project.Names.FirstOrDefault(n => n.Id == nameId);
         if (name is null) return NotFound();
 
-        var fontPath = ResolveFontPath(project.FontFamilyOrPath);
-        var request = new TagGenerationRequest
-        {
-            Text = name.Text,
-            ShapeType = project.ShapeType,
-            FontFamilyOrPath = fontPath,
-            PlateWidthMm = project.PlateWidthMm,
-            PlateHeightMm = project.PlateHeightMm,
-            PlateThicknessMm = project.PlateThicknessMm,
-            TextDepthMm = name.TextDepthMmOverride ?? project.TextDepthMm,
-            TextMarginLeftMm = project.TextMarginLeftMm,
-            TextMarginRightMm = project.TextMarginRightMm,
-            TextMarginTopMm = project.TextMarginTopMm,
-            TextMarginBottomMm = project.TextMarginBottomMm,
-            TextHorizontalAlign = project.TextHorizontalAlign,
-            TextVerticalAlign = project.TextVerticalAlign,
-            BevelMm = project.BevelMm,
-            CustomSvgBytes = project.CustomSvgBytes,
-            ShapeParams = new ShapeParamsDto(
-                project.CornerRadiusMm, project.StarPoints, project.StarInnerRadiusRatio, project.CurveSegments
-            ).ToShapeParams(),
-            MountingHoles = project.MountingHoles
-                .Select(h => new NameTags.Core.Geometry.MountingHole(h.OffsetXMm, h.OffsetYMm, h.DiameterMm))
-                .ToList(),
-        };
-
-        var mesh = _generationService.GenerateTagMesh(request);
+        var mesh = _generationService.GenerateTagMesh(BuildRequest(project, name));
         var stream = new MemoryStream();
         StlWriter.WriteBinary(stream, mesh);
         stream.Position = 0;
 
         return asAttachment ? File(stream, "model/stl", $"{name.Text}.stl") : File(stream, "model/stl");
     }
+
+    private static TagGenerationRequest BuildRequest(TagProject project, TagName name) => new()
+    {
+        Text = name.Text,
+        ShapeType = project.ShapeType,
+        FontFamilyOrPath = ResolveFontPath(project.FontFamilyOrPath),
+        PlateWidthMm = project.PlateWidthMm,
+        PlateHeightMm = project.PlateHeightMm,
+        PlateThicknessMm = project.PlateThicknessMm,
+        TextDepthMm = name.TextDepthMmOverride ?? project.TextDepthMm,
+        TextMarginLeftMm = project.TextMarginLeftMm,
+        TextMarginRightMm = project.TextMarginRightMm,
+        TextMarginTopMm = project.TextMarginTopMm,
+        TextMarginBottomMm = project.TextMarginBottomMm,
+        TextHorizontalAlign = project.TextHorizontalAlign,
+        TextVerticalAlign = project.TextVerticalAlign,
+        BevelMm = project.BevelMm,
+        CustomSvgBytes = project.CustomSvgBytes,
+        ShapeParams = new ShapeParamsDto(
+            project.CornerRadiusMm, project.StarPoints, project.StarInnerRadiusRatio, project.CurveSegments
+        ).ToShapeParams(),
+        MountingHoles = project.MountingHoles
+            .Select(h => new NameTags.Core.Geometry.MountingHole(h.OffsetXMm, h.OffsetYMm, h.DiameterMm))
+            .ToList(),
+    };
 
     private static void ApplySaveDto(TagProject project, SaveProjectDto dto)
     {
@@ -182,4 +226,11 @@ public class ProjectsController(NameTagsDbContext db) : ControllerBase
         System.IO.File.Exists(fontFamilyOrPath)
             ? fontFamilyOrPath
             : Path.Combine(AppContext.BaseDirectory, "Fonts", fontFamilyOrPath);
+
+    private static string SanitizeFileName(string text)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(text.Where(c => !invalid.Contains(c)).ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? "tag" : cleaned;
+    }
 }

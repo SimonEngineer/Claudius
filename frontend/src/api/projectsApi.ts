@@ -66,3 +66,8 @@ export async function fetchProjectStlBlob(projectId: number, nameId: number): Pr
   }
   return response.blob()
 }
+
+export function projectExportZipUrl(projectId: number, nameIds?: number[]): string {
+  const query = nameIds && nameIds.length > 0 ? `?nameIds=${nameIds.join(",")}` : ""
+  return `${API_BASE}/api/projects/${projectId}/export.zip${query}`
+}
