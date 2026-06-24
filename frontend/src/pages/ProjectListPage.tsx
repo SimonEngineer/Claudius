@@ -28,7 +28,12 @@ export function ProjectListPage() {
     <div className="min-h-svh bg-background p-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">Projects</h1>
-        <Button onClick={() => navigate("/projects/new")}>New project</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/experimental">Experimental geometry mode</Link>
+          </Button>
+          <Button onClick={() => navigate("/projects/new")}>New project</Button>
+        </div>
       </div>
 
       {error && <p className="text-sm text-destructive mb-4">{error}</p>}
