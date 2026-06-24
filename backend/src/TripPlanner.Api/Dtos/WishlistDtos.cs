@@ -1,11 +1,13 @@
+using TripPlanner.Domain.Enums;
+
 namespace TripPlanner.Api.Dtos;
 
 public record WishlistLocationDto(
     Guid Id, string Name, string? Description, string? Country, double? Lat, double? Lng,
-    DateTime CreatedAt, List<TagDto> Tags);
+    WishlistStatus Status, DateTime CreatedAt, List<TagDto> Tags);
 
-public record WishlistLocationCreateDto(string Name, string? Description, string? Country, double? Lat, double? Lng);
-public record WishlistLocationUpdateDto(string Name, string? Description, string? Country, double? Lat, double? Lng);
+public record WishlistLocationCreateDto(string Name, string? Description, string? Country, double? Lat, double? Lng, WishlistStatus? Status);
+public record WishlistLocationUpdateDto(string Name, string? Description, string? Country, double? Lat, double? Lng, WishlistStatus Status);
 
 public record WishlistNoteDto(Guid Id, string Text, DateTime CreatedAt);
 public record WishlistNoteCreateDto(string Text);

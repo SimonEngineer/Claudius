@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { TripsApi, MediaApi } from '@/api/resources'
-import { BookingType, TimelineEntryType, MediaKind, EntityType, TripStatus } from '@/types'
-import type { TripStop, Booking } from '@/types'
+import { cn } from '@/lib/utils'
+import { BookingType, TimelineEntryType, MediaKind, EntityType, TripStatus, ExpenseCategory } from '@/types'
+import type { TripStop, Booking, Expense } from '@/types'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,10 @@ const BOOKING_LABEL: Record<number, string> = {
   [BookingType.Ticket]: 'Ticket', [BookingType.Other]: 'Other',
 }
 const STATUS_LABEL: Record<number, string> = { [TripStatus.Planning]: 'Planning', [TripStatus.Active]: 'Active', [TripStatus.Completed]: 'Completed' }
+const EXPENSE_CATEGORY_LABEL: Record<number, string> = {
+  [ExpenseCategory.Lodging]: 'Lodging', [ExpenseCategory.Transport]: 'Transport',
+  [ExpenseCategory.Food]: 'Food', [ExpenseCategory.Activities]: 'Activities', [ExpenseCategory.Other]: 'Other',
+}
 
 function computedStatus(startDate?: string | null, endDate?: string | null, fallback: number = TripStatus.Planning): number {
   if (!startDate || !endDate) return fallback
@@ -95,6 +100,7 @@ function buildDayPlan(trip: { startDate?: string | null; endDate?: string | null
 const EMPTY_STOP_FORM = { name: '', lat: '', lng: '', arriveDate: '', departDate: '', isStart: false, isEnd: false, notes: '' }
 const EMPTY_BOOKING_FORM: { type: string; title: string; confirmationNumber: string; startAt: string; endAt: string; cost: string; fields: Record<string, string> } =
   { type: String(BookingType.Flight), title: '', confirmationNumber: '', startAt: '', endAt: '', cost: '', fields: {} }
+const EMPTY_EXPENSE_FORM = { category: String(ExpenseCategory.Other), amount: '', currency: 'USD', date: '', note: '' }
 
 export function TripDetailPage() {
   const { id = '' } = useParams()
@@ -108,15 +114,17 @@ export function TripDetailPage() {
   const { data: bookings = [] } = useQuery({ queryKey: ['trip', id, 'bookings'], queryFn: () => TripsApi.bookings(id) })
   const { data: timeline = [] } = useQuery({ queryKey: ['trip', id, 'timeline'], queryFn: () => TripsApi.timeline(id) })
   const { data: packingItems = [] } = useQuery({ queryKey: ['trip', id, 'packing'], queryFn: () => TripsApi.packing(id) })
+  const { data: expenses = [] } = useQuery({ queryKey: ['trip', id, 'expenses'], queryFn: () => TripsApi.expenses(id) })
 
   const onErr = (err: unknown) => showError(getErrorMessage(err))
 
   const [tripEditOpen, setTripEditOpen] = useState(false)
-  const [tripForm, setTripForm] = useState({ name: '', description: '', startDate: '', endDate: '', status: String(TripStatus.Planning) })
+  const [tripForm, setTripForm] = useState({ name: '', description: '', startDate: '', endDate: '', status: String(TripStatus.Planning), budget: '', budgetCurrency: 'USD' })
   const updateTrip = useMutation({
     mutationFn: () => TripsApi.update(id, {
       name: tripForm.name, description: tripForm.description || null,
       startDate: tripForm.startDate || null, endDate: tripForm.endDate || null, status: Number(tripForm.status),
+      budget: tripForm.budget ? parseFloat(tripForm.budget) : null, budgetCurrency: tripForm.budgetCurrency || null,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id] }); setTripEditOpen(false) },
     onError: onErr,
@@ -262,11 +270,43 @@ export function TripDetailPage() {
     onError: onErr,
   })
 
+  const [expenseOpen, setExpenseOpen] = useState(false)
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null)
+  const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM)
+  const closeExpenseDialog = () => { setExpenseOpen(false); setEditingExpenseId(null); setExpenseForm(EMPTY_EXPENSE_FORM) }
+  const startEditExpense = (e: Expense) => {
+    setEditingExpenseId(e.id)
+    setExpenseForm({ category: String(e.category), amount: String(e.amount), currency: e.currency, date: e.date, note: e.note ?? '' })
+    setExpenseOpen(true)
+  }
+  const saveExpense = useMutation({
+    mutationFn: () => {
+      const payload = {
+        category: Number(expenseForm.category), amount: parseFloat(expenseForm.amount), currency: expenseForm.currency,
+        date: expenseForm.date, note: expenseForm.note || null, bookingId: null,
+      }
+      return editingExpenseId ? TripsApi.updateExpense(editingExpenseId, payload) : TripsApi.addExpense(id, payload)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'expenses'] }); closeExpenseDialog() },
+    onError: onErr,
+  })
+  const removeExpense = useMutation({
+    mutationFn: (expenseId: string) => TripsApi.removeExpense(expenseId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id, 'expenses'] }),
+    onError: onErr,
+  })
+
   const sortedStops = useMemo(() => [...stops].sort((a, b) => a.sortOrder - b.sortOrder), [stops])
   const pins = sortedStops.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, label: s.name }))
   const dayPlan = useMemo(() => (trip ? buildDayPlan(trip, stops, bookings) : []), [trip, stops, bookings])
   const budgetTotal = bookings.reduce((sum, b) => sum + (b.cost ?? 0), 0)
   const stopNameById = (stopId?: string | null) => stopId ? stops.find((s) => s.id === stopId)?.name : undefined
+  const expenseTotal = expenses.reduce((sum, e) => sum + e.amount, 0)
+  const expensesByCategory = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const e of expenses) map.set(e.category, (map.get(e.category) ?? 0) + e.amount)
+    return [...map.entries()].sort((a, b) => b[1] - a[1])
+  }, [expenses])
 
   if (!trip) return null
 
@@ -286,7 +326,7 @@ export function TripDetailPage() {
           <Button variant={tripMode ? 'default' : 'outline'} onClick={() => setTripMode((m) => !m)}>
             {tripMode ? 'On the trip ✓' : 'On the trip?'}
           </Button>
-          <Dialog open={tripEditOpen} onOpenChange={(o) => { setTripEditOpen(o); if (o) setTripForm({ name: trip.name, description: trip.description ?? '', startDate: trip.startDate ?? '', endDate: trip.endDate ?? '', status: String(trip.status) }) }}>
+          <Dialog open={tripEditOpen} onOpenChange={(o) => { setTripEditOpen(o); if (o) setTripForm({ name: trip.name, description: trip.description ?? '', startDate: trip.startDate ?? '', endDate: trip.endDate ?? '', status: String(trip.status), budget: trip.budget != null ? String(trip.budget) : '', budgetCurrency: trip.budgetCurrency ?? 'USD' }) }}>
             <Button variant="outline" size="icon" onClick={() => setTripEditOpen(true)}><Pencil className="h-4 w-4" /></Button>
             <DialogContent>
               <DialogHeader><DialogTitle>Edit trip</DialogTitle></DialogHeader>
@@ -306,6 +346,10 @@ export function TripDetailPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label>Budget target</Label><Input type="number" step="0.01" value={tripForm.budget} onChange={(e) => setTripForm({ ...tripForm, budget: e.target.value })} placeholder="0.00" /></div>
+                  <div><Label>Currency</Label><Input value={tripForm.budgetCurrency} onChange={(e) => setTripForm({ ...tripForm, budgetCurrency: e.target.value })} /></div>
+                </div>
               </div>
               <DialogFooter><Button onClick={() => updateTrip.mutate()} disabled={!tripForm.name}>Save</Button></DialogFooter>
             </DialogContent>
@@ -321,6 +365,7 @@ export function TripDetailPage() {
           <TabsTrigger value="itinerary">Day-by-day</TabsTrigger>
           <TabsTrigger value="stops">Stops</TabsTrigger>
           <TabsTrigger value="bookings">Bookings</TabsTrigger>
+          <TabsTrigger value="budget">Budget</TabsTrigger>
           <TabsTrigger value="packing">Packing</TabsTrigger>
           <TabsTrigger value="journal">Journal</TabsTrigger>
         </TabsList>
@@ -494,6 +539,88 @@ export function TripDetailPage() {
                 )
               })}
               {bookings.length === 0 && <p className="text-sm text-muted-foreground">No bookings yet.</p>}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="budget">
+          <div className="flex flex-col gap-3">
+            <Card>
+              <CardContent className="p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Spending</h2>
+                  <div className="text-right">
+                    <div className="text-xl font-bold">{expenseTotal.toFixed(2)} {expenses[0]?.currency ?? trip.budgetCurrency ?? ''}</div>
+                    {trip.budget != null && (
+                      <div className="text-sm text-muted-foreground">of {trip.budget.toFixed(2)} {trip.budgetCurrency} budget</div>
+                    )}
+                  </div>
+                </div>
+                {trip.budget != null && trip.budget > 0 && (
+                  <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className={cn('h-full rounded-full', expenseTotal > trip.budget ? 'bg-destructive' : 'bg-primary')}
+                      style={{ width: `${Math.min(100, (expenseTotal / trip.budget) * 100)}%` }}
+                    />
+                  </div>
+                )}
+                {expensesByCategory.length > 0 && (
+                  <div className="flex flex-col gap-1 mt-2">
+                    {expensesByCategory.map(([cat, amount]) => (
+                      <div key={cat} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{EXPENSE_CATEGORY_LABEL[cat]}</span>
+                        <span>{amount.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Expenses</h2>
+              <Dialog open={expenseOpen} onOpenChange={(o) => (o ? setExpenseOpen(true) : closeExpenseDialog())}>
+                <DialogTrigger asChild><Button size="sm" onClick={() => { setEditingExpenseId(null); setExpenseForm(EMPTY_EXPENSE_FORM) }}><Plus className="h-4 w-4" /> Add expense</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>{editingExpenseId ? 'Edit expense' : 'Add expense'}</DialogTitle></DialogHeader>
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <Label>Category</Label>
+                      <Select value={expenseForm.category} onValueChange={(v) => setExpenseForm({ ...expenseForm, category: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(EXPENSE_CATEGORY_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><Label>Amount</Label><Input type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} placeholder="0.00" /></div>
+                      <div><Label>Currency</Label><Input value={expenseForm.currency} onChange={(e) => setExpenseForm({ ...expenseForm, currency: e.target.value })} /></div>
+                    </div>
+                    <div><Label>Date</Label><Input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} /></div>
+                    <div><Label>Note</Label><Textarea value={expenseForm.note} onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })} /></div>
+                  </div>
+                  <DialogFooter><Button onClick={() => saveExpense.mutate()} disabled={!expenseForm.amount || !expenseForm.date}>{editingExpenseId ? 'Save' : 'Add'}</Button></DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <div className="flex flex-col gap-2">
+              {[...expenses].sort((a, b) => b.date.localeCompare(a.date)).map((e) => (
+                <Card key={e.id}>
+                  <CardContent className="flex items-center justify-between p-3">
+                    <div>
+                      <div className="font-medium">{EXPENSE_CATEGORY_LABEL[e.category]} · {e.amount.toFixed(2)} {e.currency}</div>
+                      <div className="text-sm text-muted-foreground">{e.date}</div>
+                      {e.note && <p className="text-sm mt-1">{e.note}</p>}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => startEditExpense(e)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
+                      <button onClick={() => removeExpense.mutate(e.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              {expenses.length === 0 && <p className="text-sm text-muted-foreground">No expenses yet.</p>}
             </div>
           </div>
         </TabsContent>

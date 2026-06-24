@@ -175,6 +175,16 @@ public class GoalsController : ControllerBase
         return new GoalItemNoteDto(note.Id, note.Text, note.CreatedAt);
     }
 
+    [HttpDelete("items/notes/{noteId:guid}")]
+    public async Task<IActionResult> DeleteItemNote(Guid noteId)
+    {
+        var note = await _db.GoalItemNotes.FindAsync(noteId);
+        if (note == null) return NotFound();
+        _db.GoalItemNotes.Remove(note);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpPost("items/{itemId:guid}/links")]
     public async Task<ActionResult<GoalItemLinkDto>> AddItemLink(Guid itemId, GoalItemLinkCreateDto dto)
     {
@@ -182,6 +192,16 @@ public class GoalsController : ControllerBase
         _db.GoalItemLinks.Add(link);
         await _db.SaveChangesAsync();
         return new GoalItemLinkDto(link.Id, link.Url, link.Label);
+    }
+
+    [HttpDelete("items/links/{linkId:guid}")]
+    public async Task<IActionResult> DeleteItemLink(Guid linkId)
+    {
+        var link = await _db.GoalItemLinks.FindAsync(linkId);
+        if (link == null) return NotFound();
+        _db.GoalItemLinks.Remove(link);
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
     private static GoalDto ToDto(Goal g, List<TagDto> tags) => new(

@@ -4,6 +4,8 @@ namespace TripPlanner.Api.Dtos;
 
 public record TagDto(Guid Id, string Name, string Color);
 public record TagCreateDto(string Name, string Color);
+public record TagUpdateDto(string Name, string Color);
+public record TagUsageDto(Guid Id, string Name, string Color, int UsageCount);
 
 public record AssignTagDto(EntityType EntityType, Guid EntityId);
 

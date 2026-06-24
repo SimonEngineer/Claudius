@@ -271,6 +271,16 @@ function ItemDrawer({
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] }); setLinkUrl('') },
     onError: onErr,
   })
+  const removeNote = useMutation({
+    mutationFn: (noteId: string) => GoalsApi.removeItemNote(noteId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] }),
+    onError: onErr,
+  })
+  const removeLink = useMutation({
+    mutationFn: (linkId: string) => GoalsApi.removeItemLink(linkId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['goal', goalId, 'items'] }),
+    onError: onErr,
+  })
 
   return (
     <div className="flex flex-col gap-4">
@@ -306,7 +316,12 @@ function ItemDrawer({
       <div>
         <Label>Notes</Label>
         <div className="flex flex-col gap-2">
-          {item.notes.map((n) => <p key={n.id} className="rounded-md border p-2 text-sm">{n.text}</p>)}
+          {item.notes.map((n) => (
+            <div key={n.id} className="flex items-start justify-between gap-2 rounded-md border p-2 text-sm">
+              <p>{n.text}</p>
+              <button onClick={() => removeNote.mutate(n.id)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+            </div>
+          ))}
           <div className="flex gap-2">
             <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Add a note..." />
             <Button onClick={() => addNote.mutate()} disabled={!noteText}>Add</Button>
@@ -317,7 +332,12 @@ function ItemDrawer({
       <div>
         <Label>Links</Label>
         <div className="flex flex-col gap-2">
-          {item.links.map((l) => <a key={l.id} href={l.url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">{l.url}</a>)}
+          {item.links.map((l) => (
+            <div key={l.id} className="flex items-center justify-between gap-2">
+              <a href={l.url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">{l.url}</a>
+              <button onClick={() => removeLink.mutate(l.id)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+            </div>
+          ))}
           <div className="flex gap-2">
             <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..." />
             <Button onClick={() => addLink.mutate()} disabled={!linkUrl}>Add</Button>

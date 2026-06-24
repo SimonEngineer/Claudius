@@ -9,6 +9,7 @@ const GoalsPage = lazy(() => import('@/pages/GoalsPage').then((m) => ({ default:
 const GoalDetailPage = lazy(() => import('@/pages/GoalDetailPage').then((m) => ({ default: m.GoalDetailPage })))
 const TripsPage = lazy(() => import('@/pages/TripsPage').then((m) => ({ default: m.TripsPage })))
 const TripDetailPage = lazy(() => import('@/pages/TripDetailPage').then((m) => ({ default: m.TripDetailPage })))
+const TagsPage = lazy(() => import('@/pages/TagsPage').then((m) => ({ default: m.TagsPage })))
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/goals/:id" element={<GoalDetailPage />} />
           <Route path="/trips" element={<TripsPage />} />
           <Route path="/trips/:id" element={<TripDetailPage />} />
+          <Route path="/tags" element={<TagsPage />} />
         </Route>
       </Routes>
     </Suspense>

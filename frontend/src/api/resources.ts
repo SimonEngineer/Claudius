@@ -1,15 +1,17 @@
 import { api } from './client'
 import type {
-  Tag, WishlistLocation, WishlistNote, WishlistLink, WishlistPlan, Whiteboard,
+  Tag, TagUsage, WishlistLocation, WishlistNote, WishlistLink, WishlistPlan, Whiteboard,
   Goal, GoalFieldDefinition, GoalItem, GoalItemFieldValue,
   Trip, TripStop, Booking, TimelineEntry, MediaItem, EntityTypeValue, GoalFieldTypeValue,
-  PackingItem, TripLink,
+  PackingItem, TripLink, Expense,
 } from '@/types'
 
 // Tags
 export const TagsApi = {
   list: () => api.get<Tag[]>('/tags').then((r) => r.data),
+  usage: () => api.get<TagUsage[]>('/tags/usage').then((r) => r.data),
   create: (name: string, color = '#64748b') => api.post<Tag>('/tags', { name, color }).then((r) => r.data),
+  update: (id: string, name: string, color: string) => api.put<Tag>(`/tags/${id}`, { name, color }).then((r) => r.data),
   assign: (tagId: string, entityType: EntityTypeValue, entityId: string) =>
     api.post(`/tags/${tagId}/assign`, { entityType, entityId }),
   unassign: (tagId: string, entityType: EntityTypeValue, entityId: string) =>
@@ -78,7 +80,9 @@ export const GoalsApi = {
     api.post<GoalItem>(`/goals/items/${itemId}/complete?completed=${completed}`).then((r) => r.data),
   removeItem: (itemId: string) => api.delete(`/goals/items/${itemId}`),
   addItemNote: (itemId: string, text: string) => api.post(`/goals/items/${itemId}/notes`, { text }).then((r) => r.data),
+  removeItemNote: (noteId: string) => api.delete(`/goals/items/notes/${noteId}`),
   addItemLink: (itemId: string, url: string, label?: string) => api.post(`/goals/items/${itemId}/links`, { url, label }).then((r) => r.data),
+  removeItemLink: (linkId: string) => api.delete(`/goals/items/links/${linkId}`),
 }
 
 // Trips
@@ -109,4 +113,9 @@ export const TripsApi = {
   addPackingItem: (id: string, name: string) => api.post<PackingItem>(`/trips/${id}/packing`, { name }).then((r) => r.data),
   togglePackingItem: (itemId: string, packed: boolean) => api.post<PackingItem>(`/trips/packing/${itemId}/toggle?packed=${packed}`).then((r) => r.data),
   removePackingItem: (itemId: string) => api.delete(`/trips/packing/${itemId}`),
+
+  expenses: (id: string) => api.get<Expense[]>(`/trips/${id}/expenses`).then((r) => r.data),
+  addExpense: (id: string, data: Omit<Expense, 'id'>) => api.post<Expense>(`/trips/${id}/expenses`, data).then((r) => r.data),
+  updateExpense: (expenseId: string, data: Omit<Expense, 'id'>) => api.put<Expense>(`/trips/expenses/${expenseId}`, data).then((r) => r.data),
+  removeExpense: (expenseId: string) => api.delete(`/trips/expenses/${expenseId}`),
 }

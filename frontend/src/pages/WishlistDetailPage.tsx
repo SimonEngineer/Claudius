@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LocationsApi, TripsApi } from '@/api/resources'
-import { EntityType } from '@/types'
+import { EntityType, WishlistStatus } from '@/types'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -20,12 +21,25 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { useToast, getErrorMessage } from '@/components/ui/toast'
 import { ArrowLeft, Trash2, Pencil, MapPlus } from 'lucide-react'
 
+const STATUS_LABELS: Record<number, string> = {
+  [WishlistStatus.Idea]: 'Idea',
+  [WishlistStatus.Planned]: 'Planned',
+  [WishlistStatus.Booked]: 'Booked',
+  [WishlistStatus.Visited]: 'Visited',
+}
+const STATUS_COLORS: Record<number, string> = {
+  [WishlistStatus.Idea]: '#64748b',
+  [WishlistStatus.Planned]: '#3b82f6',
+  [WishlistStatus.Booked]: '#a855f7',
+  [WishlistStatus.Visited]: '#22c55e',
+}
+
 export function WishlistDetailPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
-  const [editForm, setEditForm] = useState({ name: '', description: '', country: '', lat: '', lng: '' })
+  const [editForm, setEditForm] = useState({ name: '', description: '', country: '', lat: '', lng: '', status: WishlistStatus.Idea as number })
   const { showError, showSuccess } = useToast()
   const onErr = (err: unknown) => showError(getErrorMessage(err))
 
@@ -79,6 +93,7 @@ export function WishlistDetailPage() {
     mutationFn: () => LocationsApi.update(id, {
       name: editForm.name, description: editForm.description || null, country: editForm.country || null,
       lat: editForm.lat ? parseFloat(editForm.lat) : null, lng: editForm.lng ? parseFloat(editForm.lng) : null,
+      status: editForm.status,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['location', id] }); setEditOpen(false) },
     onError: onErr,
@@ -114,7 +129,10 @@ export function WishlistDetailPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{location.name}</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            {location.name}
+            <Badge style={{ backgroundColor: STATUS_COLORS[location.status], color: 'white' }}>{STATUS_LABELS[location.status]}</Badge>
+          </h1>
           <p className="text-muted-foreground">{location.country}</p>
         </div>
         <div className="flex gap-2">
@@ -136,7 +154,7 @@ export function WishlistDetailPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); if (o) setEditForm({ name: location.name, description: location.description ?? '', country: location.country ?? '', lat: location.lat?.toString() ?? '', lng: location.lng?.toString() ?? '' }) }}>
+          <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); if (o) setEditForm({ name: location.name, description: location.description ?? '', country: location.country ?? '', lat: location.lat?.toString() ?? '', lng: location.lng?.toString() ?? '', status: location.status }) }}>
             <Button variant="outline" size="icon" onClick={() => setEditOpen(true)}><Pencil className="h-4 w-4" /></Button>
             <DialogContent className="max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Edit location</DialogTitle></DialogHeader>
@@ -144,6 +162,15 @@ export function WishlistDetailPage() {
                 <div><Label>Name</Label><Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
                 <div><Label>Description</Label><Textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></div>
                 <div><Label>Country</Label><Input value={editForm.country} onChange={(e) => setEditForm({ ...editForm, country: e.target.value })} /></div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={String(editForm.status)} onValueChange={(v) => setEditForm({ ...editForm, status: Number(v) })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(STATUS_LABELS).map(([v, label]) => <SelectItem key={v} value={v}>{label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div>
                   <Label>Click the map to set location</Label>
                   <LocationMap

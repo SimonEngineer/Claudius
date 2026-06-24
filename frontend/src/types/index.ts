@@ -4,6 +4,10 @@ export interface Tag {
   color: string
 }
 
+export interface TagUsage extends Tag {
+  usageCount: number
+}
+
 export const EntityType = {
   WishlistLocation: 1,
   GoalItem: 2,
@@ -30,6 +34,9 @@ export interface MediaItem {
   createdAt: string
 }
 
+export const WishlistStatus = { Idea: 1, Planned: 2, Booked: 3, Visited: 4 } as const
+export type WishlistStatusValue = (typeof WishlistStatus)[keyof typeof WishlistStatus]
+
 export interface WishlistLocation {
   id: string
   name: string
@@ -37,6 +44,7 @@ export interface WishlistLocation {
   country?: string | null
   lat?: number | null
   lng?: number | null
+  status: number
   createdAt: string
   tags: Tag[]
 }
@@ -138,6 +146,8 @@ export interface Trip {
   startDate?: string | null
   endDate?: string | null
   status: number
+  budget?: number | null
+  budgetCurrency?: string | null
   tags: Tag[]
 }
 
@@ -192,4 +202,17 @@ export interface TimelineEntry {
   lng?: number | null
   capturedAt: string
   nearestStopId?: string | null
+}
+
+export const ExpenseCategory = { Lodging: 1, Transport: 2, Food: 3, Activities: 4, Other: 5 } as const
+export type ExpenseCategoryValue = (typeof ExpenseCategory)[keyof typeof ExpenseCategory]
+
+export interface Expense {
+  id: string
+  category: number
+  amount: number
+  currency: string
+  date: string
+  note?: string | null
+  bookingId?: string | null
 }

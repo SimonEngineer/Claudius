@@ -29,6 +29,25 @@ public class TagsController : ControllerBase
         return new TagDto(tag.Id, tag.Name, tag.Color);
     }
 
+    [HttpGet("usage")]
+    public async Task<ActionResult<List<TagUsageDto>>> GetUsage()
+    {
+        var tags = await _db.Tags.OrderBy(t => t.Name).ToListAsync();
+        var counts = await _db.TaggedItems.GroupBy(ti => ti.TagId).Select(g => new { g.Key, Count = g.Count() }).ToListAsync();
+        var countMap = counts.ToDictionary(c => c.Key, c => c.Count);
+        return tags.Select(t => new TagUsageDto(t.Id, t.Name, t.Color, countMap.GetValueOrDefault(t.Id, 0))).ToList();
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<TagDto>> Update(Guid id, TagUpdateDto dto)
+    {
+        var tag = await _db.Tags.FindAsync(id);
+        if (tag == null) return NotFound();
+        tag.Name = dto.Name; tag.Color = dto.Color;
+        await _db.SaveChangesAsync();
+        return new TagDto(tag.Id, tag.Name, tag.Color);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {

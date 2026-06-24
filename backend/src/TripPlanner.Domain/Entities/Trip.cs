@@ -9,11 +9,14 @@ public class Trip : EntityBase
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public TripStatus Status { get; set; } = TripStatus.Planning;
+    public decimal? Budget { get; set; }
+    public string? BudgetCurrency { get; set; }
 
     public ICollection<TripStop> Stops { get; set; } = new List<TripStop>();
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
     public ICollection<TimelineEntry> Timeline { get; set; } = new List<TimelineEntry>();
     public ICollection<PackingItem> PackingItems { get; set; } = new List<PackingItem>();
+    public ICollection<Expense> Expenses { get; set; } = new List<Expense>();
 }
 
 public class TripStop : EntityBase
@@ -67,4 +70,16 @@ public class TimelineEntry : EntityBase
     public double? Lng { get; set; }
     public DateTime CapturedAt { get; set; } = DateTime.UtcNow;
     public Guid? NearestStopId { get; set; }
+}
+
+public class Expense : EntityBase
+{
+    public Guid TripId { get; set; }
+    public Trip Trip { get; set; } = null!;
+    public ExpenseCategory Category { get; set; }
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "USD";
+    public DateOnly Date { get; set; }
+    public string? Note { get; set; }
+    public Guid? BookingId { get; set; }
 }

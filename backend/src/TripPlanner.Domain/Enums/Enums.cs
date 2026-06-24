@@ -56,3 +56,20 @@ public enum TimelineEntryType
     Video = 3,
     Url = 4,
 }
+
+public enum ExpenseCategory
+{
+    Lodging = 1,
+    Transport = 2,
+    Food = 3,
+    Activities = 4,
+    Other = 5,
+}
+
+public enum WishlistStatus
+{
+    Idea = 1,
+    Planned = 2,
+    Booked = 3,
+    Visited = 4,
+}

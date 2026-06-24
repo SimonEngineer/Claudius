@@ -47,6 +47,7 @@ public class TripsController : ControllerBase
         var trip = await _db.Trips.FindAsync(id);
         if (trip == null) return NotFound();
         trip.Name = dto.Name; trip.Description = dto.Description; trip.StartDate = dto.StartDate; trip.EndDate = dto.EndDate; trip.Status = dto.Status;
+        trip.Budget = dto.Budget; trip.BudgetCurrency = dto.BudgetCurrency;
         await _db.SaveChangesAsync();
         var tags = await TagHelper.GetTagsForAsync(_db, EntityType.Trip, id);
         return ToDto(trip, tags);
@@ -239,6 +240,48 @@ public class TripsController : ControllerBase
         return NoContent();
     }
 
+    // Expenses
+    [HttpGet("{id:guid}/expenses")]
+    public async Task<ActionResult<List<ExpenseDto>>> GetExpenses(Guid id)
+        => await _db.Expenses.Where(e => e.TripId == id).OrderBy(e => e.Date)
+            .Select(e => new ExpenseDto(e.Id, e.Category, e.Amount, e.Currency, e.Date, e.Note, e.BookingId)).ToListAsync();
+
+    [HttpPost("{id:guid}/expenses")]
+    public async Task<ActionResult<ExpenseDto>> AddExpense(Guid id, ExpenseCreateDto dto)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        var expense = new Expense
+        {
+            TripId = id, Category = dto.Category, Amount = dto.Amount, Currency = dto.Currency,
+            Date = dto.Date, Note = dto.Note, BookingId = dto.BookingId,
+        };
+        _db.Expenses.Add(expense);
+        await _db.SaveChangesAsync();
+        return new ExpenseDto(expense.Id, expense.Category, expense.Amount, expense.Currency, expense.Date, expense.Note, expense.BookingId);
+    }
+
+    [HttpPut("expenses/{expenseId:guid}")]
+    public async Task<ActionResult<ExpenseDto>> UpdateExpense(Guid expenseId, ExpenseCreateDto dto)
+    {
+        var expense = await _db.Expenses.FindAsync(expenseId);
+        if (expense == null) return NotFound();
+        expense.Category = dto.Category; expense.Amount = dto.Amount; expense.Currency = dto.Currency;
+        expense.Date = dto.Date; expense.Note = dto.Note; expense.BookingId = dto.BookingId;
+        await _db.SaveChangesAsync();
+        return new ExpenseDto(expense.Id, expense.Category, expense.Amount, expense.Currency, expense.Date, expense.Note, expense.BookingId);
+    }
+
+    [HttpDelete("expenses/{expenseId:guid}")]
+    public async Task<IActionResult> DeleteExpense(Guid expenseId)
+    {
+        var expense = await _db.Expenses.FindAsync(expenseId);
+        if (expense == null) return NotFound();
+        _db.Expenses.Remove(expense);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     private static TripDto ToDto(Trip t, List<TagDto> tags) =>
-        new(t.Id, t.Name, t.Description, t.StartDate, t.EndDate, t.Status, tags);
+        new(t.Id, t.Name, t.Description, t.StartDate, t.EndDate, t.Status, t.Budget, t.BudgetCurrency, tags);
 }

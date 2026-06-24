@@ -35,7 +35,7 @@ public class LocationsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<WishlistLocationDto>> Create(WishlistLocationCreateDto dto)
     {
-        var location = new WishlistLocation { Name = dto.Name, Description = dto.Description, Country = dto.Country, Lat = dto.Lat, Lng = dto.Lng };
+        var location = new WishlistLocation { Name = dto.Name, Description = dto.Description, Country = dto.Country, Lat = dto.Lat, Lng = dto.Lng, Status = dto.Status ?? WishlistStatus.Idea };
         _db.WishlistLocations.Add(location);
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(Get), new { id = location.Id }, ToDto(location, new()));
@@ -46,7 +46,7 @@ public class LocationsController : ControllerBase
     {
         var location = await _db.WishlistLocations.FindAsync(id);
         if (location == null) return NotFound();
-        location.Name = dto.Name; location.Description = dto.Description; location.Country = dto.Country; location.Lat = dto.Lat; location.Lng = dto.Lng;
+        location.Name = dto.Name; location.Description = dto.Description; location.Country = dto.Country; location.Lat = dto.Lat; location.Lng = dto.Lng; location.Status = dto.Status;
         await _db.SaveChangesAsync();
         var tags = await TagHelper.GetTagsForAsync(_db, EntityType.WishlistLocation, id);
         return ToDto(location, tags);
@@ -171,5 +171,5 @@ public class LocationsController : ControllerBase
             .Select(s => new TripLinkDto(s.TripId, s.Trip.Name, s.Id)).ToListAsync();
 
     private static WishlistLocationDto ToDto(WishlistLocation l, List<TagDto> tags) =>
-        new(l.Id, l.Name, l.Description, l.Country, l.Lat, l.Lng, l.CreatedAt, tags);
+        new(l.Id, l.Name, l.Description, l.Country, l.Lat, l.Lng, l.Status, l.CreatedAt, tags);
 }

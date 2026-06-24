@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, MapPinned, Target, Plane } from 'lucide-react'
+import { LayoutDashboard, MapPinned, Target, Plane, Tags } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/wishlist', label: 'Wishlist', icon: MapPinned },
   { to: '/goals', label: 'Goals', icon: Target },
   { to: '/trips', label: 'Trips', icon: Plane },
+  { to: '/tags', label: 'Tags', icon: Tags },
 ]
 
 export function Layout() {

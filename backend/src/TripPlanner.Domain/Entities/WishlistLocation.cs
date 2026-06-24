@@ -1,3 +1,5 @@
+using TripPlanner.Domain.Enums;
+
 namespace TripPlanner.Domain.Entities;
 
 public class WishlistLocation : EntityBase
@@ -7,6 +9,7 @@ public class WishlistLocation : EntityBase
     public string? Country { get; set; }
     public double? Lat { get; set; }
     public double? Lng { get; set; }
+    public WishlistStatus Status { get; set; } = WishlistStatus.Idea;
 
     public ICollection<WishlistNote> Notes { get; set; } = new List<WishlistNote>();
     public ICollection<WishlistLink> Links { get; set; } = new List<WishlistLink>();
