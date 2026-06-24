@@ -130,3 +130,25 @@ export interface Overview {
   needsAttention: TaskSummary[];
   pendingApprovals: ApprovalSummary[];
 }
+
+export interface ProjectCost {
+  projectId: string;
+  projectName: string;
+  costUsd: number;
+  tokensIn: number;
+  tokensOut: number;
+  runCount: number;
+}
+
+export interface DailyCost {
+  date: string;
+  costUsd: number;
+}
+
+export interface CostSummary {
+  totalCostUsd: number;
+  totalTokensIn: number;
+  totalTokensOut: number;
+  byProject: ProjectCost[];
+  last30Days: DailyCost[];
+}

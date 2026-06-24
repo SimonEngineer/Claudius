@@ -1,4 +1,12 @@
-import type { AgentTask, Approval, Goal, Overview, Project, TaskEventDto } from "@/types/api";
+import type {
+  AgentTask,
+  Approval,
+  CostSummary,
+  Goal,
+  Overview,
+  Project,
+  TaskEventDto,
+} from "@/types/api";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5139";
 
@@ -73,4 +81,6 @@ export const api = {
   getHealth: () => request<{ status: string; database: boolean }>("/api/health"),
 
   getOverview: () => request<Overview>("/api/overview"),
+
+  getCosts: () => request<CostSummary>("/api/costs"),
 };

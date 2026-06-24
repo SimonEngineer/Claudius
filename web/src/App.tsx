@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { ApprovalInboxPage } from "@/pages/approval-inbox-page";
+import { CostsPage } from "@/pages/costs-page";
 import { OverviewPage } from "@/pages/overview-page";
 import { ProjectDetailPage } from "@/pages/project-detail-page";
 import { ProjectListPage } from "@/pages/project-list-page";
@@ -51,6 +52,9 @@ function App() {
             <Link to="/approvals" className="text-muted-foreground hover:text-foreground">
               Approvals
             </Link>
+            <Link to="/costs" className="text-muted-foreground hover:text-foreground">
+              Costs
+            </Link>
             <HealthIndicator />
           </nav>
         </div>
@@ -62,6 +66,7 @@ function App() {
           <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="/approvals" element={<ApprovalInboxPage />} />
+          <Route path="/costs" element={<CostsPage />} />
         </Routes>
       </main>
     </div>

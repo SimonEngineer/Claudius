@@ -22,6 +22,10 @@ public class OrchestratorDbContext(DbContextOptions<OrchestratorDbContext> optio
         if (Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true)
         {
             configurationBuilder.Properties<DateTimeOffset>().HaveConversion<DateTimeOffsetToBinaryConverter>();
+
+            // Sqlite also can't run SQL-level aggregates (Sum/Avg) over decimal, used for cost
+            // rollups -- store decimal as double there. No-op for Npgsql, which has no such limit.
+            configurationBuilder.Properties<decimal>().HaveConversion<double>();
         }
     }
 
