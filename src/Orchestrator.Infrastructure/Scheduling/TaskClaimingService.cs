@@ -60,6 +60,7 @@ public class TaskClaimingService(
 
         var claimed = new List<AgentTask>();
         var workerId = $"{Environment.MachineName}:{Environment.ProcessId}";
+        var leaseDuration = opts.GetLeaseDuration(lane);
 
         foreach (var task in candidates)
         {
@@ -79,7 +80,7 @@ public class TaskClaimingService(
             var rowsAffected = await db.Database.ExecuteSqlInterpolatedAsync($"""
                 UPDATE "Tasks"
                 SET "LockedBy" = {workerId},
-                    "LeaseExpiresAt" = {DateTimeOffset.UtcNow.Add(opts.LeaseDuration)},
+                    "LeaseExpiresAt" = {DateTimeOffset.UtcNow.Add(leaseDuration)},
                     "State" = {(lane == Lane.Supervisor ? NextSupervisorState(task.State) : TaskState.InProgress).ToString()},
                     "UpdatedAt" = {DateTimeOffset.UtcNow}
                 WHERE "Id" = {task.Id} AND "LockedBy" IS NULL
@@ -91,7 +92,7 @@ public class TaskClaimingService(
             }
 
             task.LockedBy = workerId;
-            task.LeaseExpiresAt = DateTimeOffset.UtcNow.Add(opts.LeaseDuration);
+            task.LeaseExpiresAt = DateTimeOffset.UtcNow.Add(leaseDuration);
             task.State = lane == Lane.Supervisor ? NextSupervisorState(task.State) : TaskState.InProgress;
             perProjectInFlight[task.ProjectId] = currentForProject + 1;
             claimed.Add(task);

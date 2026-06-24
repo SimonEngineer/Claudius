@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { ApprovalInboxPage } from "@/pages/approval-inbox-page";
+import { OverviewPage } from "@/pages/overview-page";
 import { ProjectDetailPage } from "@/pages/project-detail-page";
 import { ProjectListPage } from "@/pages/project-list-page";
 import { TaskDetailPage } from "@/pages/task-detail-page";
@@ -42,6 +43,9 @@ function App() {
           </Link>
           <nav className="flex items-center gap-4 text-sm">
             <Link to="/" className="text-muted-foreground hover:text-foreground">
+              Overview
+            </Link>
+            <Link to="/projects" className="text-muted-foreground hover:text-foreground">
               Projects
             </Link>
             <Link to="/approvals" className="text-muted-foreground hover:text-foreground">
@@ -53,7 +57,8 @@ function App() {
       </header>
       <main className="container flex-1 px-0">
         <Routes>
-          <Route path="/" element={<ProjectListPage />} />
+          <Route path="/" element={<OverviewPage />} />
+          <Route path="/projects" element={<ProjectListPage />} />
           <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="/approvals" element={<ApprovalInboxPage />} />

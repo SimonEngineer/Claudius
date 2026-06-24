@@ -101,3 +101,32 @@ export interface LiveEvent {
   timestamp: string;
   payload: string;
 }
+
+export interface TaskSummary {
+  id: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  state: TaskState;
+  lane: Lane;
+  retryCount: number;
+  updatedAt: string;
+}
+
+export interface ApprovalSummary {
+  id: string;
+  taskId: string;
+  projectId: string;
+  projectName: string;
+  taskTitle: string;
+  question: string;
+  createdAt: string;
+}
+
+export interface Overview {
+  projectCount: number;
+  taskCountsByState: Partial<Record<TaskState, number>>;
+  inProgress: TaskSummary[];
+  needsAttention: TaskSummary[];
+  pendingApprovals: ApprovalSummary[];
+}

@@ -63,7 +63,7 @@ export function ProjectDetailPage() {
 
   return (
     <div className="flex flex-col gap-6 p-8">
-      <Link to="/" className="text-sm text-muted-foreground hover:underline">
+      <Link to="/projects" className="text-sm text-muted-foreground hover:underline">
         ← Projects
       </Link>
 

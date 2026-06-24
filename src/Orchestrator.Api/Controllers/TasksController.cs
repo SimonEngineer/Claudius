@@ -11,8 +11,7 @@ namespace Orchestrator.Api.Controllers;
 [Route("api")]
 public class TasksController(
     OrchestratorDbContext db,
-    IRunCancellationRegistry cancellationRegistry,
-    IEventBroadcaster broadcaster) : ControllerBase
+    TaskLifecycleService lifecycleService) : ControllerBase
 {
     [HttpGet("projects/{projectId:guid}/tasks")]
     public async Task<ActionResult<IEnumerable<AgentTask>>> ListForProject(Guid projectId, CancellationToken ct)
@@ -39,32 +38,20 @@ public class TasksController(
     /// Cancels a task: stops the in-flight engine process immediately (if currently running) and
     /// marks the task dead-lettered, freeing the slot for the next scheduler tick. Cancelling a
     /// task that isn't currently running still dead-letters it -- the user explicitly opted out.
+    /// Cancelling a decomposed parent cascades to its still-active children; cancelling a child
+    /// (or the parent itself) propagates up to a decomposed parent, same as an engine-driven
+    /// dead-letter would -- see TaskLifecycleService.
     /// </summary>
     [HttpPost("tasks/{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
-        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id, ct);
-        if (task is null)
+        var result = await lifecycleService.CancelAsync(id, ct);
+        return result switch
         {
-            return NotFound();
-        }
-
-        if (task.State is TaskState.Done or TaskState.Failed or TaskState.DeadLetter)
-        {
-            return Conflict($"Task {id} is already terminal ({task.State}).");
-        }
-
-        cancellationRegistry.TryCancel(id);
-
-        task.State = TaskState.DeadLetter;
-        task.LockedBy = null;
-        task.LeaseExpiresAt = null;
-        task.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-
-        await broadcaster.BroadcastTaskStateChangedAsync(task.Id, task.ProjectId, task.State, ct);
-
-        return NoContent();
+            null => NotFound(),
+            false => Conflict($"Task {id} is already terminal."),
+            true => NoContent()
+        };
     }
 
     /// <summary>

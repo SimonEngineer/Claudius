@@ -151,7 +151,7 @@ Key `Scheduler` options (`appsettings.json` or environment, e.g.
 | `SupervisorConcurrency` | 3 | Max concurrent supervisor-lane runs across all projects |
 | `WorkerConcurrency` | 1 | Max concurrent worker-lane runs across all projects |
 | `TickInterval` | 5s | How often the scheduler looks for runnable tasks |
-| `LeaseDuration` | 45m | Must exceed the slowest expected local-model call |
+| `LeaseBuffer` | 2m | Added to a lane's own RunTimeout to get that lane's lease duration, so a crashed supervisor task is recovered in minutes rather than waiting out a duration sized for the much slower worker lane |
 | `SupervisorRunTimeout` | 5m | Per-call timeout, supervisor lane |
 | `WorkerRunTimeout` | 30m | Per-call timeout, worker lane |
 

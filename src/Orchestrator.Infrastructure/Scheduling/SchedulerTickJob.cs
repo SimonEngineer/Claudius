@@ -5,9 +5,10 @@ using Orchestrator.Domain;
 namespace Orchestrator.Infrastructure.Scheduling;
 
 /// <summary>
-/// Registered as a Hangfire recurring job (see Program.cs). Each tick: claims any
-/// newly-runnable tasks up to free lane capacity and enqueues them onto the matching
-/// Hangfire queue. This is what makes "task waiting on approval frees the slot
+/// Invoked on every tick of SchedulerTickHostedService's PeriodicTimer (not a Hangfire recurring
+/// job -- Hangfire's cron only resolves to whole minutes, too coarse for prompt slot reuse). Each
+/// tick: claims any newly-runnable tasks up to free lane capacity and enqueues them onto the
+/// matching Hangfire queue. This is what makes "task waiting on approval frees the slot
 /// immediately" work -- the tick runs independently of any single task's lifecycle.
 /// </summary>
 public class SchedulerTickJob(

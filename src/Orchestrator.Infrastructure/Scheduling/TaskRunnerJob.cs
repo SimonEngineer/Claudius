@@ -216,8 +216,16 @@ public class TaskRunnerJob(
                 break;
 
             case EngineOutcome.NeedsInput when mode == EngineMode.Verify:
-                // Supervisor found issues and supplied a concrete follow-up instruction;
-                // no human approval needed, just loop back for another implementation pass.
+                // Supervisor found issues and supplied a concrete follow-up instruction; no human
+                // approval needed, just loop back for another implementation pass. Counts against
+                // RetryCount like Failed does, so a stuck Implement<->Verify loop still dead-letters
+                // instead of cycling forever.
+                task.RetryCount += 1;
+                if (task.RetryCount > AgentTask.MaxRetries)
+                {
+                    task.State = TaskState.DeadLetter;
+                    return await PropagateToParentAsync(task, TaskState.DeadLetter, ct);
+                }
                 task.PlanJson = result.PlanJson ?? task.PlanJson;
                 task.State = TaskState.NeedsFix;
                 break;

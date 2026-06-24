@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<ClaudeCodeAdapter>();
         services.AddScoped<AiderAdapter>();
         services.AddScoped<TaskClaimingService>();
+        services.AddScoped<TaskLifecycleService>();
         services.AddScoped<TaskRunnerJob>();
         services.AddScoped<SchedulerTickJob>();
         services.AddHostedService<SchedulerTickHostedService>();
