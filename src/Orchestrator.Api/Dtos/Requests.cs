@@ -7,7 +7,8 @@ public record CreateProjectRequest(
     string WorkerModel,
     string SupervisorModel,
     int MaxWorkerConcurrency = 1,
-    int Priority = 0);
+    int Priority = 0,
+    bool RequirePlanApproval = false);
 
 public record CreateGoalRequest(string Description, string? Title = null);
 

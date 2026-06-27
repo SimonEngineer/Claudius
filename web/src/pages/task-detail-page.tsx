@@ -131,15 +131,42 @@ export function TaskDetailPage() {
         </Card>
       )}
 
+      {(task.planJson || pendingApproval?.kind === "PlanReview") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Plan</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {task.planJson && (
+              <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">{task.planJson}</pre>
+            )}
+            {task.acceptanceCriteriaJson && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Acceptance criteria</p>
+                <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+                  {task.acceptanceCriteriaJson}
+                </pre>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {pendingApproval && (
         <Card className="border-amber-400">
           <CardHeader>
-            <CardTitle className="text-base">Approval needed</CardTitle>
+            <CardTitle className="text-base">
+              {pendingApproval.kind === "PlanReview" ? "Plan review needed" : "Approval needed"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm">{pendingApproval.question}</p>
             <Input
-              placeholder="Your answer (optional)"
+              placeholder={
+                pendingApproval.kind === "PlanReview"
+                  ? "Feedback if rejecting (optional)"
+                  : "Your answer (optional)"
+              }
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
             />

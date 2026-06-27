@@ -39,6 +39,7 @@ export interface CreateProjectInput {
   supervisorModel: string;
   maxWorkerConcurrency?: number;
   priority?: number;
+  requirePlanApproval?: boolean;
 }
 
 export interface CreateGoalInput {

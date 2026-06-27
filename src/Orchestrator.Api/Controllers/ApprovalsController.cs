@@ -4,6 +4,7 @@ using Orchestrator.Api.Dtos;
 using Orchestrator.Domain;
 using Orchestrator.Domain.Streaming;
 using Orchestrator.Infrastructure.Persistence;
+using Orchestrator.Infrastructure.Scheduling;
 
 namespace Orchestrator.Api.Controllers;
 
@@ -55,11 +56,30 @@ public class ApprovalsController(OrchestratorDbContext db, IEventBroadcaster bro
         var task = approval.Task!;
         if (status == ApprovalStatus.Approved)
         {
+            if (approval.Kind == ApprovalKind.PlanReview)
+            {
+                PlanDecomposer.Apply(task, db);
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(request.Answer))
+                {
+                    task.Description = $"{task.Description}\n\nUser answered: {request.Answer}";
+                }
+                task.State = TaskState.ReadyForWork;
+            }
+        }
+        else if (approval.Kind == ApprovalKind.PlanReview)
+        {
+            // Rejecting a plan just means it needs another pass, not that the task is dead --
+            // send it back to the supervisor with the reviewer's feedback folded in.
+            task.PlanJson = null;
+            task.AcceptanceCriteriaJson = null;
             if (!string.IsNullOrWhiteSpace(request.Answer))
             {
-                task.Description = $"{task.Description}\n\nUser answered: {request.Answer}";
+                task.Description = $"{task.Description}\n\nPlan rejected, feedback: {request.Answer}";
             }
-            task.State = TaskState.ReadyForWork;
+            task.State = TaskState.Queued;
         }
         else
         {

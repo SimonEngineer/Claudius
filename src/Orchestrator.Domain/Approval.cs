@@ -10,6 +10,7 @@ public class Approval
     public required string Question { get; set; }
     /// <summary>Suggested answer options, if any, as a JSON string array.</summary>
     public string? OptionsJson { get; set; }
+    public ApprovalKind Kind { get; set; } = ApprovalKind.WorkerInput;
 
     public ApprovalStatus Status { get; set; } = ApprovalStatus.Pending;
     public string? Answer { get; set; }

@@ -32,6 +32,11 @@ public class Project
     /// pausing spend without cancelling queued work.</summary>
     public bool IsPaused { get; set; } = false;
 
+    /// <summary>When true, a Planning run's output goes through a human approval step
+    /// (Approval with Kind=PlanReview) before any worker tasks are created/started -- the
+    /// supervisor's plan is reviewable before the run spends worker-lane budget on it.</summary>
+    public bool RequirePlanApproval { get; set; } = false;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public List<Goal> Goals { get; set; } = [];

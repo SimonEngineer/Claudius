@@ -15,6 +15,7 @@ export type TaskState =
 export type RunStatus = "Running" | "Succeeded" | "Failed" | "Cancelled";
 export type EventType = "Token" | "ToolCall" | "FileDiff" | "Log" | "StatusChange";
 export type ApprovalStatus = "Pending" | "Approved" | "Rejected";
+export type ApprovalKind = "WorkerInput" | "PlanReview";
 export type GoalStatus = "Active" | "Completed" | "Cancelled";
 
 export interface Project {
@@ -27,6 +28,7 @@ export interface Project {
   maxWorkerConcurrency: number;
   priority: number;
   isPaused: boolean;
+  requirePlanApproval: boolean;
   createdAt: string;
 }
 
@@ -58,6 +60,7 @@ export interface Approval {
   runId: string | null;
   question: string;
   optionsJson: string | null;
+  kind: ApprovalKind;
   status: ApprovalStatus;
   answer: string | null;
   resolvedBy: string | null;

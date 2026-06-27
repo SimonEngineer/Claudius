@@ -51,6 +51,12 @@ public enum ApprovalStatus
     Rejected
 }
 
+public enum ApprovalKind
+{
+    WorkerInput,
+    PlanReview
+}
+
 public enum GoalStatus
 {
     Active,

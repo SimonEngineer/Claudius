@@ -32,6 +32,7 @@ const EMPTY_FORM: CreateProjectInput = {
   supervisorModel: "localai/qwen2.5-coder-32b",
   maxWorkerConcurrency: 1,
   priority: 0,
+  requirePlanApproval: false,
 };
 
 export function ProjectListPage() {
@@ -150,6 +151,14 @@ export function ProjectListPage() {
                   />
                 </div>
               </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.requirePlanApproval}
+                  onChange={(e) => setForm({ ...form, requirePlanApproval: e.target.checked })}
+                />
+                Require plan approval before worker tasks start
+              </label>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>

@@ -35,7 +35,8 @@ public class ProjectsController(OrchestratorDbContext db) : ControllerBase
             WorkerModel = request.WorkerModel,
             SupervisorModel = request.SupervisorModel,
             MaxWorkerConcurrency = request.MaxWorkerConcurrency,
-            Priority = request.Priority
+            Priority = request.Priority,
+            RequirePlanApproval = request.RequirePlanApproval
         };
 
         db.Projects.Add(project);

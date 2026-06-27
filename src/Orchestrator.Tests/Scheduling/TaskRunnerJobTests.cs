@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -28,12 +29,16 @@ public class TaskRunnerJobTests : IDisposable
     private const string EngineErrorResult =
         """{"type":"result","subtype":"error_during_execution"}""";
 
-    private static Project NewProject() => new()
+    private const string PlanResult =
+        """{"type":"result","subtype":"success","result":"Here is the plan.\n```json\n{\"plan\": [\"step 1\", \"step 2\"], \"acceptanceCriteria\": [\"criterion 1\"]}\n```"}""";
+
+    private static Project NewProject(bool requirePlanApproval = false) => new()
     {
         Name = "proj",
         RepoPath = "/repo",
         WorkerModel = "worker-model",
         SupervisorModel = "supervisor-model",
+        RequirePlanApproval = requirePlanApproval,
     };
 
     private TaskRunnerJob MakeJob(IReadOnlyList<string> claudeStdout)
@@ -159,5 +164,44 @@ public class TaskRunnerJobTests : IDisposable
 
         var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
         Assert.Equal(TaskState.Done, reloaded!.State);
+    }
+
+    [Fact]
+    public async Task PlanSucceeds_DecomposesImmediately_WhenProjectDoesNotRequirePlanApproval()
+    {
+        var project = NewProject();
+        var task = new AgentTask { ProjectId = project.Id, Title = "t", State = TaskState.Planning };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeJob([PlanResult]).ExecuteSupervisorTaskAsync(task.Id);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.Equal(TaskState.Decomposed, reloaded!.State);
+        var children = await _db.Context.Tasks.Where(t => t.ParentTaskId == task.Id).ToListAsync();
+        Assert.Equal(2, children.Count);
+        Assert.All(children, c => Assert.Equal(TaskState.ReadyForWork, c.State));
+    }
+
+    [Fact]
+    public async Task PlanSucceeds_WaitsForApproval_WhenProjectRequiresPlanApproval()
+    {
+        var project = NewProject(requirePlanApproval: true);
+        var task = new AgentTask { ProjectId = project.Id, Title = "t", State = TaskState.Planning };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeJob([PlanResult]).ExecuteSupervisorTaskAsync(task.Id);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.Equal(TaskState.AwaitingInput, reloaded!.State);
+        Assert.NotNull(reloaded.PlanJson);
+        Assert.Empty(await _db.Context.Tasks.Where(t => t.ParentTaskId == task.Id).ToListAsync());
+
+        var approval = await _db.Context.Approvals.SingleAsync(a => a.TaskId == task.Id);
+        Assert.Equal(ApprovalKind.PlanReview, approval.Kind);
+        Assert.Equal(ApprovalStatus.Pending, approval.Status);
     }
 }

@@ -158,29 +158,22 @@ public class TaskRunnerJob(
             case EngineOutcome.Succeeded when mode == EngineMode.Plan:
                 task.PlanJson = result.PlanJson;
                 task.AcceptanceCriteriaJson = ExtractAcceptanceCriteria(result.PlanJson);
-                var steps = ExtractPlanSteps(result.PlanJson);
-                if (steps.Count > 1)
+                if (task.Project!.RequirePlanApproval)
                 {
-                    foreach (var step in steps)
+                    var planApproval = new Approval
                     {
-                        db.Tasks.Add(new AgentTask
-                        {
-                            ProjectId = task.ProjectId,
-                            GoalId = task.GoalId,
-                            ParentTaskId = task.Id,
-                            Title = step,
-                            Description = step,
-                            Lane = Lane.Worker,
-                            State = TaskState.ReadyForWork,
-                            Priority = task.Priority,
-                            AcceptanceCriteriaJson = task.AcceptanceCriteriaJson
-                        });
-                    }
-                    task.State = TaskState.Decomposed;
+                        TaskId = task.Id,
+                        RunId = run.Id,
+                        Kind = ApprovalKind.PlanReview,
+                        Question = "Review the proposed plan before any worker tasks start."
+                    };
+                    db.Approvals.Add(planApproval);
+                    task.State = TaskState.AwaitingInput;
+                    await broadcaster.BroadcastApprovalRequestedAsync(task.Id, task.ProjectId, planApproval, ct);
                 }
                 else
                 {
-                    task.State = TaskState.ReadyForWork;
+                    PlanDecomposer.Apply(task, db);
                 }
                 break;
 
@@ -308,33 +301,6 @@ public class TaskRunnerJob(
             .ToListAsync(ct);
 
         return skills.Count == 0 ? null : JsonSerializer.Serialize(skills);
-    }
-
-    private static List<string> ExtractPlanSteps(string? planJson)
-    {
-        if (planJson is null)
-        {
-            return [];
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(planJson);
-            if (!doc.RootElement.TryGetProperty("plan", out var plan) || plan.ValueKind != JsonValueKind.Array)
-            {
-                return [];
-            }
-
-            return plan.EnumerateArray()
-                .Select(e => e.GetString())
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Select(s => s!)
-                .ToList();
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
     }
 
     private static string? ExtractAcceptanceCriteria(string? planJson)
