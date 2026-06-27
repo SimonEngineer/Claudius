@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Orchestrator.Domain;
 using Orchestrator.Domain.Streaming;
+using Orchestrator.Infrastructure.Engines;
 using Orchestrator.Infrastructure.Persistence;
 using Orchestrator.Infrastructure.Scheduling;
 
@@ -11,7 +12,8 @@ namespace Orchestrator.Api.Controllers;
 [Route("api")]
 public class TasksController(
     OrchestratorDbContext db,
-    TaskLifecycleService lifecycleService) : ControllerBase
+    TaskLifecycleService lifecycleService,
+    GitWorktreeService worktreeService) : ControllerBase
 {
     [HttpGet("projects/{projectId:guid}/tasks")]
     public async Task<ActionResult<IEnumerable<AgentTask>>> ListForProject(Guid projectId, CancellationToken ct)
@@ -52,6 +54,37 @@ public class TasksController(
             false => Conflict($"Task {id} is already terminal."),
             true => NoContent()
         };
+    }
+
+    /// <summary>
+    /// Discards uncommitted changes in the task's git worktree (reset --hard + clean -fd) --
+    /// the rollback affordance for when an agent's run went off the rails and the in-progress
+    /// edits shouldn't be kept. Doesn't change the task's state; it's safe to run on a task
+    /// that's about to be retried or cancelled.
+    /// </summary>
+    [HttpPost("tasks/{id:guid}/discard-changes")]
+    public async Task<IActionResult> DiscardChanges(Guid id, CancellationToken ct)
+    {
+        var task = await db.Tasks.Include(t => t.Project).FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (task is null)
+        {
+            return NotFound();
+        }
+
+        var rootTaskId = task.ParentTaskId ?? task.Id;
+        try
+        {
+            await worktreeService.DiscardChangesAsync(task.Project!.RepoPath, rootTaskId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
+
+        AuditLogger.Record(db, action: "Task.ChangesDiscarded", projectId: task.ProjectId, taskId: task.Id);
+        await db.SaveChangesAsync(ct);
+
+        return NoContent();
     }
 
     /// <summary>

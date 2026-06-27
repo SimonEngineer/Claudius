@@ -43,6 +43,42 @@ public class GitWorktreeService(IProcessRunner processRunner, ILogger<GitWorktre
         return worktreePath;
     }
 
+    /// <summary>
+    /// Discards all uncommitted edits and untracked files in a task's worktree, reverting it back
+    /// to the branch's last commit -- the rollback affordance for when an agent's run went off the
+    /// rails and the changes shouldn't be kept. Does not touch commit history: if the agent itself
+    /// committed along the way, those commits survive (this only undoes uncommitted work).
+    /// </summary>
+    public async Task DiscardChangesAsync(string repoPath, Guid rootTaskId, CancellationToken ct)
+    {
+        var worktreePath = GetWorktreePath(repoPath, rootTaskId);
+        if (!Directory.Exists(worktreePath))
+        {
+            throw new InvalidOperationException($"No worktree found at {worktreePath} for root task {rootTaskId}.");
+        }
+
+        logger.LogInformation("Discarding uncommitted changes in worktree {Path} for root task {RootTaskId}",
+            worktreePath, rootTaskId);
+
+        async Task RunGit(string[] args)
+        {
+            var result = await processRunner.RunAsync(
+                new ProcessSpec("git", args, worktreePath),
+                onStdoutLine: _ => Task.CompletedTask,
+                onStderrLine: line => { logger.LogWarning("git {Args}: {Line}", string.Join(' ', args), line); return Task.CompletedTask; },
+                timeout: TimeSpan.FromMinutes(1),
+                cancellationToken: ct);
+
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"git {string.Join(' ', args)} failed in {worktreePath} (exit code {result.ExitCode}).");
+            }
+        }
+
+        await RunGit(["reset", "--hard", "HEAD"]);
+        await RunGit(["clean", "-fd"]);
+    }
+
     public async Task RemoveWorktreeAsync(string repoPath, Guid rootTaskId, CancellationToken ct)
     {
         var worktreePath = GetWorktreePath(repoPath, rootTaskId);

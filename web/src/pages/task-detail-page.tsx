@@ -18,6 +18,8 @@ export function TaskDetailPage() {
   const [answer, setAnswer] = useState("");
   const [resolving, setResolving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [discardError, setDiscardError] = useState<string | null>(null);
 
   const refreshTask = useCallback(() => {
     if (!taskId) return;
@@ -41,6 +43,19 @@ export function TaskDetailPage() {
       refreshTask();
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const discardChanges = async () => {
+    if (!task) return;
+    setDiscarding(true);
+    setDiscardError(null);
+    try {
+      await api.discardTaskChanges(task.id);
+    } catch (err) {
+      setDiscardError(err instanceof Error ? err.message : "Failed to discard changes.");
+    } finally {
+      setDiscarding(false);
     }
   };
 
@@ -103,6 +118,9 @@ export function TaskDetailPage() {
         </div>
         <div className="flex items-center gap-3">
           <TaskStateBadge state={task.state} />
+          <Button size="sm" variant="outline" onClick={discardChanges} disabled={discarding}>
+            Discard changes
+          </Button>
           {!["Done", "Failed", "DeadLetter"].includes(task.state) && (
             <Button size="sm" variant="destructive" onClick={cancelTask} disabled={cancelling}>
               Cancel
@@ -110,6 +128,7 @@ export function TaskDetailPage() {
           )}
         </div>
       </div>
+      {discardError && <p className="text-sm text-destructive">{discardError}</p>}
 
       {subtasks.length > 0 && (
         <Card>

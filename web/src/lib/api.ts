@@ -87,6 +87,7 @@ export const api = {
     request<void>(`/api/approvals/${id}/reject`, { method: "POST", body: JSON.stringify(body) }),
 
   cancelTask: (id: string) => request<void>(`/api/tasks/${id}/cancel`, { method: "POST" }),
+  discardTaskChanges: (id: string) => request<void>(`/api/tasks/${id}/discard-changes`, { method: "POST" }),
 
   getHealth: () => request<{ status: string; database: boolean }>("/api/health"),
 
