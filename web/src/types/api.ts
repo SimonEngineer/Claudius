@@ -32,6 +32,15 @@ export interface Project {
   createdAt: string;
 }
 
+export interface Skill {
+  id: string;
+  projectId: string;
+  name: string;
+  content: string;
+  createdByRunId: string | null;
+  createdAt: string;
+}
+
 export interface Goal {
   id: string;
   projectId: string;

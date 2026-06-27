@@ -5,6 +5,7 @@ import type {
   Goal,
   Overview,
   Project,
+  Skill,
   SystemHealth,
   TaskEventDto,
 } from "@/types/api";
@@ -60,6 +61,10 @@ export const api = {
     request<Project>("/api/projects", { method: "POST", body: JSON.stringify(body) }),
   pauseProject: (id: string) => request<Project>(`/api/projects/${id}/pause`, { method: "POST" }),
   resumeProject: (id: string) => request<Project>(`/api/projects/${id}/resume`, { method: "POST" }),
+
+  listSkills: (projectId: string) => request<Skill[]>(`/api/projects/${projectId}/skills`),
+  deleteSkill: (projectId: string, id: string) =>
+    request<void>(`/api/projects/${projectId}/skills/${id}`, { method: "DELETE" }),
 
   listGoals: (projectId: string) => request<Goal[]>(`/api/projects/${projectId}/goals`),
   createGoal: (projectId: string, body: CreateGoalInput) =>

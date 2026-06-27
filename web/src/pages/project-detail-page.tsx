@@ -18,12 +18,13 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useProjectStream } from "@/hooks/use-task-stream";
 import { api } from "@/lib/api";
-import type { AgentTask, Project } from "@/types/api";
+import type { AgentTask, Project, Skill } from "@/types/api";
 
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [title, setTitle] = useState("");
@@ -35,10 +36,16 @@ export function ProjectDetailPage() {
     api.listTasksForProject(projectId).then(setTasks);
   };
 
+  const refreshSkills = () => {
+    if (!projectId) return;
+    api.listSkills(projectId).then(setSkills);
+  };
+
   useEffect(() => {
     if (!projectId) return;
     api.getProject(projectId).then(setProject);
     refreshTasks();
+    refreshSkills();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
@@ -56,6 +63,12 @@ export function ProjectDetailPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDeleteSkill = async (skillId: string) => {
+    if (!projectId) return;
+    await api.deleteSkill(projectId, skillId);
+    refreshSkills();
   };
 
   const handleTogglePaused = async () => {
@@ -162,6 +175,32 @@ export function ProjectDetailPage() {
                 </div>
                 <TaskStateBadge state={task.state} />
               </Link>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Skills ({skills.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            Auto-authored by the supervisor on successful runs and injected into future prompts.
+          </p>
+          {skills.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No skills learned yet.</p>
+          ) : (
+            skills.map((skill) => (
+              <div key={skill.id} className="flex flex-col gap-1 rounded-md border p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{skill.name}</span>
+                  <Button variant="outline" size="sm" onClick={() => handleDeleteSkill(skill.id)}>
+                    Delete
+                  </Button>
+                </div>
+                <p className="whitespace-pre-wrap text-xs text-muted-foreground">{skill.content}</p>
+              </div>
             ))
           )}
         </CardContent>
