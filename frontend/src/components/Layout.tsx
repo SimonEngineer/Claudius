@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutDashboard, MapPinned, Target, Plane, Tags } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { QuickCapture } from '@/components/QuickCapture'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -55,6 +56,8 @@ export function Layout() {
           </NavLink>
         ))}
       </nav>
+
+      <QuickCapture />
     </div>
   )
 }
