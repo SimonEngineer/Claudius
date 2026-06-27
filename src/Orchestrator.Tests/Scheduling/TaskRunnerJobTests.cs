@@ -227,9 +227,38 @@ public class TaskRunnerJobTests : IDisposable
 
         var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
         Assert.Equal(TaskState.Decomposed, reloaded!.State);
-        var children = await _db.Context.Tasks.Where(t => t.ParentTaskId == task.Id).ToListAsync();
+        var children = await _db.Context.Tasks.Where(t => t.ParentTaskId == task.Id).OrderBy(c => c.Title).ToListAsync();
         Assert.Equal(2, children.Count);
-        Assert.All(children, c => Assert.Equal(TaskState.ReadyForWork, c.State));
+        Assert.Equal(TaskState.ReadyForWork, children[0].State);
+        Assert.Null(children[0].DependsOnTaskId);
+        Assert.Equal(TaskState.Blocked, children[1].State);
+        Assert.Equal(children[0].Id, children[1].DependsOnTaskId);
+    }
+
+    [Fact]
+    public async Task VerifyPass_OnFirstStep_UnblocksSecondStep_SoStepsRunSequentially()
+    {
+        var project = NewProject();
+        var task = new AgentTask { ProjectId = project.Id, Title = "t", State = TaskState.Planning };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeJob([PlanResult]).ExecuteSupervisorTaskAsync(task.Id);
+        var children = await _db.Context.Tasks.Where(t => t.ParentTaskId == task.Id).OrderBy(c => c.Title).ToListAsync();
+        var firstStep = children[0];
+        var secondStep = children[1];
+        Assert.Equal(TaskState.Blocked, secondStep.State);
+
+        firstStep.State = TaskState.Verifying;
+        await _db.Context.SaveChangesAsync();
+
+        const string verifyPass =
+            """{"type":"result","subtype":"success","result":"```json\n{\"verdict\": \"pass\", \"notes\": \"looks good\"}\n```"}""";
+        await MakeJob([verifyPass]).ExecuteSupervisorTaskAsync(firstStep.Id);
+
+        var reloadedSecondStep = await _db.Context.Tasks.FindAsync(secondStep.Id);
+        Assert.Equal(TaskState.ReadyForWork, reloadedSecondStep!.State);
     }
 
     [Fact]

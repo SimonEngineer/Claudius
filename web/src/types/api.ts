@@ -3,6 +3,7 @@ export type EngineType = "ClaudeCode" | "Aider";
 export type TaskState =
   | "Queued"
   | "Planning"
+  | "Blocked"
   | "ReadyForWork"
   | "InProgress"
   | "Verifying"

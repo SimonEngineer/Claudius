@@ -16,6 +16,11 @@ public class AgentTask
     public Guid? ParentTaskId { get; set; }
     public AgentTask? ParentTask { get; set; }
 
+    /// <summary>A sibling step (within the same decomposed plan) that must reach Done before
+    /// this task can leave Blocked and become ReadyForWork. Set by PlanDecomposer to chain plan
+    /// steps sequentially; null for single-step plans and root tasks.</summary>
+    public Guid? DependsOnTaskId { get; set; }
+
     public required string Title { get; set; }
     public string? Description { get; set; }
 

@@ -16,6 +16,7 @@ public enum TaskState
 {
     Queued,
     Planning,
+    Blocked,
     ReadyForWork,
     InProgress,
     Verifying,

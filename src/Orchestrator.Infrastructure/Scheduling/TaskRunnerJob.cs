@@ -220,6 +220,7 @@ public class TaskRunnerJob(
                         CreatedByRunId = run.Id
                     });
                 }
+                await UnblockDependentsAsync(task.Id, ct);
                 return await PropagateToParentAsync(task, TaskState.Done, ct);
 
             case EngineOutcome.NeedsInput when mode == EngineMode.Implement:
@@ -316,6 +317,25 @@ public class TaskRunnerJob(
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Promotes any sibling step Blocked on this task to ReadyForWork now that it's Done. Broadcasts
+    /// directly (rather than returning, like PropagateToParentAsync does) since there can be more
+    /// than one dependent in principle, though plan chaining only ever produces at most one today.
+    /// </summary>
+    private async Task UnblockDependentsAsync(Guid completedTaskId, CancellationToken ct)
+    {
+        var dependents = await db.Tasks
+            .Where(t => t.DependsOnTaskId == completedTaskId && t.State == TaskState.Blocked)
+            .ToListAsync(ct);
+
+        foreach (var dependent in dependents)
+        {
+            dependent.State = TaskState.ReadyForWork;
+            dependent.UpdatedAt = DateTimeOffset.UtcNow;
+            await broadcaster.BroadcastTaskStateChangedAsync(dependent.Id, dependent.ProjectId, dependent.State, ct);
+        }
     }
 
     private async Task<string?> BuildExistingSkillsJsonAsync(Guid projectId, CancellationToken ct)

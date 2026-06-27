@@ -4,6 +4,7 @@ import type { TaskState } from "@/types/api";
 const VARIANT_BY_STATE: Record<TaskState, BadgeProps["variant"]> = {
   Queued: "secondary",
   Planning: "outline",
+  Blocked: "secondary",
   ReadyForWork: "outline",
   InProgress: "default",
   Verifying: "default",
