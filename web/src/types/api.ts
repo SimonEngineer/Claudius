@@ -191,3 +191,58 @@ export interface SystemHealth {
   deadLetterCount: number;
   pausedProjectCount: number;
 }
+
+export type WorkflowRunStatus = "Running" | "Succeeded" | "Failed";
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string | null;
+  isEnabled: boolean;
+  definitionJson: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  status: WorkflowRunStatus;
+  triggerPayloadJson: string | null;
+  stepLogJson: string;
+  errorMessage: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface NodeFieldDescriptor {
+  name: string;
+  label: string;
+  fieldType: string;
+}
+
+export interface NodeTypeDescriptor {
+  type: string;
+  category: "trigger" | "action";
+  label: string;
+  description: string;
+  fields: NodeFieldDescriptor[];
+}
+
+export interface WorkflowNode {
+  id: string;
+  type: string;
+  config: Record<string, string>;
+  x: number;
+  y: number;
+}
+
+export interface WorkflowEdge {
+  from: string;
+  to: string;
+}
+
+export interface WorkflowDefinition {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+}

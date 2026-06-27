@@ -8,6 +8,8 @@ import { OverviewPage } from "@/pages/overview-page";
 import { ProjectDetailPage } from "@/pages/project-detail-page";
 import { ProjectListPage } from "@/pages/project-list-page";
 import { TaskDetailPage } from "@/pages/task-detail-page";
+import { WorkflowEditorPage } from "@/pages/workflow-editor-page";
+import { WorkflowsPage } from "@/pages/workflows-page";
 import { api } from "@/lib/api";
 
 function HealthIndicator() {
@@ -59,6 +61,9 @@ function App() {
             <Link to="/audit-log" className="text-muted-foreground hover:text-foreground">
               Audit log
             </Link>
+            <Link to="/automations" className="text-muted-foreground hover:text-foreground">
+              Automations
+            </Link>
             <HealthIndicator />
           </nav>
         </div>
@@ -72,6 +77,8 @@ function App() {
           <Route path="/approvals" element={<ApprovalInboxPage />} />
           <Route path="/costs" element={<CostsPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
+          <Route path="/automations" element={<WorkflowsPage />} />
+          <Route path="/automations/:workflowId" element={<WorkflowEditorPage />} />
         </Routes>
       </main>
     </div>

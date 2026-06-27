@@ -4,11 +4,14 @@ import type {
   AuditLogEntry,
   CostSummary,
   Goal,
+  NodeTypeDescriptor,
   Overview,
   Project,
   Skill,
   SystemHealth,
   TaskEventDto,
+  Workflow,
+  WorkflowRun,
 } from "@/types/api";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5139";
@@ -53,6 +56,13 @@ export interface CreateGoalInput {
 export interface ResolveApprovalInput {
   answer?: string;
   resolvedBy?: string;
+}
+
+export interface SaveWorkflowInput {
+  name: string;
+  description?: string;
+  definitionJson: string;
+  isEnabled: boolean;
 }
 
 export const api = {
@@ -101,4 +111,19 @@ export const api = {
     request<AuditLogEntry[]>(
       projectId ? `/api/audit-log?projectId=${projectId}` : "/api/audit-log",
     ),
+
+  getWorkflowNodeTypes: () => request<NodeTypeDescriptor[]>("/api/workflows/node-types"),
+  listWorkflows: () => request<Workflow[]>("/api/workflows"),
+  getWorkflow: (id: string) => request<Workflow>(`/api/workflows/${id}`),
+  createWorkflow: (body: SaveWorkflowInput) =>
+    request<Workflow>("/api/workflows", { method: "POST", body: JSON.stringify(body) }),
+  updateWorkflow: (id: string, body: SaveWorkflowInput) =>
+    request<void>(`/api/workflows/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteWorkflow: (id: string) => request<void>(`/api/workflows/${id}`, { method: "DELETE" }),
+  runWorkflow: (id: string, payloadJson?: string) =>
+    request<WorkflowRun>(`/api/workflows/${id}/run`, {
+      method: "POST",
+      body: JSON.stringify({ payloadJson }),
+    }),
+  listWorkflowRuns: (id: string) => request<WorkflowRun[]>(`/api/workflows/${id}/runs`),
 };
