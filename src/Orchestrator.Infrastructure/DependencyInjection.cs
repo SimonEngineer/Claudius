@@ -32,6 +32,9 @@ public static class DependencyInjection
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<GitWorktreeService>();
         services.AddSingleton<IRunCancellationRegistry, RunCancellationRegistry>();
+        // Singleton: failure counts must be shared across every run for the breaker to mean
+        // anything -- a scoped instance would reset on every task.
+        services.AddSingleton<IModelCircuitBreaker, ModelCircuitBreaker>();
         services.AddScoped<ClaudeCodeAdapter>();
         services.AddScoped<AiderAdapter>();
         services.AddScoped<TaskClaimingService>();

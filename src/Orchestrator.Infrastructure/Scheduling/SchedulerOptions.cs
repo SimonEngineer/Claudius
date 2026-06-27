@@ -54,4 +54,13 @@ public class SchedulerOptions
         var backoff = RetryBackoffBase * Math.Pow(2, shift);
         return backoff > RetryBackoffMax ? RetryBackoffMax : backoff;
     }
+
+    /// <summary>Consecutive engine-run failures for a given model before its circuit breaker
+    /// opens -- protects against hammering a rate-limited or down model host with runs that are
+    /// very likely to fail too.</summary>
+    public int CircuitBreakerFailureThreshold { get; set; } = 5;
+
+    /// <summary>How long a model's circuit breaker stays open once tripped, before the next run
+    /// is allowed through as a half-open probe.</summary>
+    public TimeSpan CircuitBreakerCooldown { get; set; } = TimeSpan.FromMinutes(2);
 }

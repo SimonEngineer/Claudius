@@ -41,9 +41,10 @@ public class TaskRunnerJobTests : IDisposable
         RequirePlanApproval = requirePlanApproval,
     };
 
-    private TaskRunnerJob MakeJob(IReadOnlyList<string> claudeStdout)
+    private TaskRunnerJob MakeJob(IReadOnlyList<string> claudeStdout, IModelCircuitBreaker? circuitBreaker = null, SchedulerOptions? schedulerOptions = null)
     {
         var fakeRunner = new FakeProcessRunner(claudeStdout);
+        var opts = schedulerOptions ?? new SchedulerOptions();
         return new TaskRunnerJob(
             _db.Context,
             new ClaudeCodeAdapter(fakeRunner, NullLogger<ClaudeCodeAdapter>.Instance),
@@ -51,7 +52,8 @@ public class TaskRunnerJobTests : IDisposable
             new GitWorktreeService(fakeRunner, NullLogger<GitWorktreeService>.Instance),
             new RunCancellationRegistry(),
             Substitute.For<IEventBroadcaster>(),
-            Options.Create(new SchedulerOptions()),
+            circuitBreaker ?? new ModelCircuitBreaker(Options.Create(opts)),
+            Options.Create(opts),
             NullLogger<TaskRunnerJob>.Instance);
     }
 
@@ -146,6 +148,52 @@ public class TaskRunnerJobTests : IDisposable
         Assert.Equal(TaskState.ReadyForWork, reloaded!.State);
         Assert.NotNull(reloaded.NextAttemptAt);
         Assert.True(reloaded.NextAttemptAt > before);
+    }
+
+    [Fact]
+    public async Task Execute_RequeuesWithoutRunningEngine_WhenCircuitBreakerIsOpenForModel()
+    {
+        var project = NewProject();
+        var task = new AgentTask
+        {
+            ProjectId = project.Id,
+            Title = "t",
+            State = TaskState.InProgress,
+            LockedBy = "worker-1",
+            RetryCount = 0,
+        };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        var breaker = new ModelCircuitBreaker(Options.Create(new SchedulerOptions { CircuitBreakerFailureThreshold = 1 }));
+        breaker.RecordFailure(project.WorkerModel);
+        Assert.True(breaker.IsOpen(project.WorkerModel));
+
+        await MakeJob([EngineErrorResult], circuitBreaker: breaker).ExecuteWorkerTaskAsync(task.Id);
+
+        var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
+        Assert.Equal(TaskState.ReadyForWork, reloaded!.State);
+        Assert.Equal(0, reloaded.RetryCount);
+        Assert.Null(reloaded.LockedBy);
+        Assert.NotNull(reloaded.NextAttemptAt);
+        Assert.Empty(_db.Context.Runs);
+    }
+
+    [Fact]
+    public async Task Execute_RecordsCircuitBreakerFailure_WhenEngineRunFails()
+    {
+        var project = NewProject();
+        var task = new AgentTask { ProjectId = project.Id, Title = "t", State = TaskState.InProgress };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        var breaker = new ModelCircuitBreaker(Options.Create(new SchedulerOptions { CircuitBreakerFailureThreshold = 1 }));
+
+        await MakeJob([EngineErrorResult], circuitBreaker: breaker).ExecuteWorkerTaskAsync(task.Id);
+
+        Assert.True(breaker.IsOpen(project.WorkerModel));
     }
 
     [Fact]

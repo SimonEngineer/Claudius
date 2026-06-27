@@ -24,6 +24,7 @@ public class TaskRunnerJob(
     GitWorktreeService worktreeService,
     IRunCancellationRegistry cancellationRegistry,
     IEventBroadcaster broadcaster,
+    IModelCircuitBreaker circuitBreaker,
     IOptions<SchedulerOptions> options,
     ILogger<TaskRunnerJob> logger)
 {
@@ -63,6 +64,23 @@ public class TaskRunnerJob(
         var engine = lane == Lane.Supervisor ? EngineType.ClaudeCode : EngineType.Aider;
         var model = lane == Lane.Supervisor ? project.SupervisorModel : project.WorkerModel;
         var timeout = lane == Lane.Supervisor ? options.Value.SupervisorRunTimeout : options.Value.WorkerRunTimeout;
+
+        if (circuitBreaker.IsOpen(model))
+        {
+            logger.LogWarning(
+                "TaskRunnerJob: circuit breaker open for model {Model}, requeueing task {TaskId} without spending an attempt",
+                model, taskId);
+            task.LockedBy = null;
+            task.LeaseExpiresAt = null;
+            task.State = lane == Lane.Supervisor
+                ? (task.State == TaskState.Verifying ? TaskState.Verifying : TaskState.Queued)
+                : TaskState.ReadyForWork;
+            task.NextAttemptAt = circuitBreaker.OpenUntil(model) ?? DateTimeOffset.UtcNow.Add(options.Value.CircuitBreakerCooldown);
+            task.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+            await broadcaster.BroadcastTaskStateChangedAsync(task.Id, task.ProjectId, task.State, ct);
+            return;
+        }
 
         var run = new Run { TaskId = task.Id, Engine = engine, Model = model, Status = RunStatus.Running };
         db.Runs.Add(run);
@@ -122,6 +140,15 @@ public class TaskRunnerJob(
         finally
         {
             cancellationRegistry.Unregister(task.Id);
+        }
+
+        if (result.Outcome is EngineOutcome.Succeeded or EngineOutcome.NeedsInput)
+        {
+            circuitBreaker.RecordSuccess(model);
+        }
+        else if (result.Outcome == EngineOutcome.Failed)
+        {
+            circuitBreaker.RecordFailure(model);
         }
 
         run.Status = result.Outcome switch
