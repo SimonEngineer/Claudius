@@ -460,10 +460,10 @@ export function TripDetailPage() {
                       {s.notes && <p className="text-sm mt-1">{s.notes}</p>}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => moveStop(s.id, -1)} disabled={i === 0} className="disabled:opacity-30"><ChevronUp className="h-4 w-4 text-muted-foreground" /></button>
-                      <button onClick={() => moveStop(s.id, 1)} disabled={i === sortedStops.length - 1} className="disabled:opacity-30"><ChevronDown className="h-4 w-4 text-muted-foreground" /></button>
-                      <button onClick={() => startEditStop(s)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
-                      <button onClick={() => removeStop.mutate(s.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                      <button className="p-1.5 -m-1.5 disabled:opacity-30" onClick={() => moveStop(s.id, -1)} disabled={i === 0}><ChevronUp className="h-4 w-4 text-muted-foreground" /></button>
+                      <button className="p-1.5 -m-1.5 disabled:opacity-30" onClick={() => moveStop(s.id, 1)} disabled={i === sortedStops.length - 1}><ChevronDown className="h-4 w-4 text-muted-foreground" /></button>
+                      <button className="p-1.5 -m-1.5" onClick={() => startEditStop(s)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
+                      <button className="p-1.5 -m-1.5" onClick={() => removeStop.mutate(s.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                     </div>
                   </CardContent>
                 </Card>
@@ -535,8 +535,8 @@ export function TripDetailPage() {
                         ))}
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => startEditBooking(b)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
-                        <button onClick={() => removeBooking.mutate(b.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                        <button className="p-1.5 -m-1.5" onClick={() => startEditBooking(b)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
+                        <button className="p-1.5 -m-1.5" onClick={() => removeBooking.mutate(b.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                       </div>
                     </CardContent>
                   </Card>
@@ -618,8 +618,8 @@ export function TripDetailPage() {
                       {e.note && <p className="text-sm mt-1">{e.note}</p>}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => startEditExpense(e)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
-                      <button onClick={() => removeExpense.mutate(e.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                      <button className="p-1.5 -m-1.5" onClick={() => startEditExpense(e)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
+                      <button className="p-1.5 -m-1.5" onClick={() => removeExpense.mutate(e.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                     </div>
                   </CardContent>
                 </Card>
@@ -643,7 +643,7 @@ export function TripDetailPage() {
                       <Checkbox checked={p.isPacked} onCheckedChange={(c) => togglePackingItem.mutate({ itemId: p.id, packed: !!c })} />
                       <span className={p.isPacked ? 'line-through text-muted-foreground' : ''}>{p.name}</span>
                     </label>
-                    <button onClick={() => removePackingItem.mutate(p.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                    <button className="p-1.5 -m-1.5" onClick={() => removePackingItem.mutate(p.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                   </div>
                 ))}
                 {packingItems.length === 0 && <p className="text-sm text-muted-foreground">No packing items yet.</p>}
@@ -699,7 +699,7 @@ export function TripDetailPage() {
                         <TimelineMedia entryId={e.id} />
                       )}
                     </div>
-                    <button onClick={() => removeTimelineEntry.mutate(e.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                    <button className="p-1.5 -m-1.5" onClick={() => removeTimelineEntry.mutate(e.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                   </CardContent>
                 </Card>
               ))}

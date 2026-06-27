@@ -140,7 +140,7 @@ export function GoalDetailPage() {
                     {goal.fieldDefinitions.map((f) => (
                       <div key={f.id} className="flex items-center justify-between rounded-md border p-2">
                         <span className="text-sm">{f.label} <span className="text-muted-foreground">({FIELD_TYPE_LABELS[f.fieldType]})</span></span>
-                        <button onClick={() => removeField.mutate(f.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                        <button className="p-1.5 -m-1.5" onClick={() => removeField.mutate(f.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                       </div>
                     ))}
                     {goal.fieldDefinitions.length === 0 && <p className="text-sm text-muted-foreground">No custom fields yet.</p>}
@@ -221,8 +221,8 @@ export function GoalDetailPage() {
                     ))}
                     <td className="p-2" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
-                        <button onClick={() => startEditItem(item)}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
-                        <button onClick={() => { if (confirm(`Delete "${item.name}"?`)) removeItem.mutate(item.id) }}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                        <button className="p-1.5 -m-1.5" onClick={() => startEditItem(item)}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                        <button className="p-1.5 -m-1.5" onClick={() => { if (confirm(`Delete "${item.name}"?`)) removeItem.mutate(item.id) }}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
                       </div>
                     </td>
                   </tr>
@@ -291,8 +291,8 @@ function ItemDrawer({
             {item.name}
           </span>
           <span className="flex items-center gap-1">
-            <button onClick={onEdit}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
-            <button onClick={() => { if (confirm(`Delete "${item.name}"?`)) onDelete() }}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+            <button className="p-1.5 -m-1.5" onClick={onEdit}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
+            <button className="p-1.5 -m-1.5" onClick={() => { if (confirm(`Delete "${item.name}"?`)) onDelete() }}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
           </span>
         </DialogTitle>
       </DialogHeader>
@@ -319,7 +319,7 @@ function ItemDrawer({
           {item.notes.map((n) => (
             <div key={n.id} className="flex items-start justify-between gap-2 rounded-md border p-2 text-sm">
               <p>{n.text}</p>
-              <button onClick={() => removeNote.mutate(n.id)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+              <button className="p-1.5 -m-1.5" onClick={() => removeNote.mutate(n.id)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
             </div>
           ))}
           <div className="flex gap-2">
@@ -335,7 +335,7 @@ function ItemDrawer({
           {item.links.map((l) => (
             <div key={l.id} className="flex items-center justify-between gap-2">
               <a href={l.url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">{l.url}</a>
-              <button onClick={() => removeLink.mutate(l.id)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+              <button className="p-1.5 -m-1.5" onClick={() => removeLink.mutate(l.id)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
             </div>
           ))}
           <div className="flex gap-2">

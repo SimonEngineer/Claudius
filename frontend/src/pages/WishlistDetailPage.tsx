@@ -235,7 +235,7 @@ export function WishlistDetailPage() {
               {notes.map((n) => (
                 <div key={n.id} className="flex items-start justify-between gap-2 rounded-md border p-2">
                   <p className="text-sm">{n.text}</p>
-                  <button onClick={() => removeNote.mutate(n.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                  <button className="p-1.5 -m-1.5" onClick={() => removeNote.mutate(n.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                 </div>
               ))}
             </div>
@@ -253,7 +253,7 @@ export function WishlistDetailPage() {
               {links.map((l) => (
                 <div key={l.id} className="flex items-center justify-between gap-2 rounded-md border p-2">
                   <a href={l.url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">{l.label || l.url}</a>
-                  <button onClick={() => removeLink.mutate(l.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                  <button className="p-1.5 -m-1.5" onClick={() => removeLink.mutate(l.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
                 </div>
               ))}
             </div>
