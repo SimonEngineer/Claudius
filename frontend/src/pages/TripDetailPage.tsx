@@ -360,12 +360,16 @@ export function TripDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue={tripMode ? 'journal' : 'itinerary'}>
+      <Tabs key={tripMode ? 'trip' : 'plan'} defaultValue={tripMode ? 'journal' : 'itinerary'}>
         <TabsList>
-          <TabsTrigger value="itinerary">Day-by-day</TabsTrigger>
-          <TabsTrigger value="stops">Stops</TabsTrigger>
-          <TabsTrigger value="bookings">Bookings</TabsTrigger>
-          <TabsTrigger value="budget">Budget</TabsTrigger>
+          {!tripMode && (
+            <>
+              <TabsTrigger value="itinerary">Day-by-day</TabsTrigger>
+              <TabsTrigger value="stops">Stops</TabsTrigger>
+              <TabsTrigger value="bookings">Bookings</TabsTrigger>
+              <TabsTrigger value="budget">Budget</TabsTrigger>
+            </>
+          )}
           <TabsTrigger value="packing">Packing</TabsTrigger>
           <TabsTrigger value="journal">Journal</TabsTrigger>
         </TabsList>

@@ -42,7 +42,7 @@ export function LocationMap({ pins, height = 320, center, zoom = 2, onPick, onPi
   const defaultCenter: [number, number] = center ?? (pins[0] ? [pins[0].lat, pins[0].lng] : [20, 0])
 
   return (
-    <div style={{ height }} className="overflow-hidden rounded-md border">
+    <div style={{ height }} className="relative isolate overflow-hidden rounded-md border">
       <MapContainer center={defaultCenter} zoom={zoom} style={{ height: '100%', width: '100%' }}>
         <TileLayer
           attribution='&copy; OpenStreetMap contributors'
