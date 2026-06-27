@@ -13,3 +13,7 @@ public record CreateProjectRequest(
 public record CreateGoalRequest(string Description, string? Title = null);
 
 public record ResolveApprovalRequest(string? Answer, string ResolvedBy = "user");
+
+public record SaveWorkflowRequest(string Name, string? Description, string DefinitionJson, bool IsEnabled = true);
+
+public record RunWorkflowRequest(string? PayloadJson = null);

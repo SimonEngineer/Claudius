@@ -20,7 +20,7 @@ namespace Orchestrator.Infrastructure.Discord;
 public class DiscordBotService(
     IOptions<DiscordOptions> options,
     IServiceScopeFactory scopeFactory,
-    ILogger<DiscordBotService> logger) : BackgroundService
+    ILogger<DiscordBotService> logger) : BackgroundService, IDiscordNotifier
 {
     private readonly DiscordOptions _options = options.Value;
     private readonly TaskCompletionSource _ready = new();

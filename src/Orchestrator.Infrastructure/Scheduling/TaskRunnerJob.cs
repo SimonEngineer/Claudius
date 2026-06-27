@@ -8,6 +8,7 @@ using Orchestrator.Domain.Engines;
 using Orchestrator.Domain.Streaming;
 using Orchestrator.Infrastructure.Engines;
 using Orchestrator.Infrastructure.Persistence;
+using Orchestrator.Infrastructure.Workflows;
 
 namespace Orchestrator.Infrastructure.Scheduling;
 
@@ -25,6 +26,7 @@ public class TaskRunnerJob(
     IRunCancellationRegistry cancellationRegistry,
     IEventBroadcaster broadcaster,
     IModelCircuitBreaker circuitBreaker,
+    IWorkflowEngine workflowEngine,
     IOptions<SchedulerOptions> options,
     ILogger<TaskRunnerJob> logger)
 {
@@ -221,6 +223,7 @@ public class TaskRunnerJob(
                     });
                 }
                 await UnblockDependentsAsync(task.Id, ct);
+                await workflowEngine.TriggerEventAsync("task.done", new { taskId = task.Id, projectId = task.ProjectId, title = task.Title }, ct);
                 return await PropagateToParentAsync(task, TaskState.Done, ct);
 
             case EngineOutcome.NeedsInput when mode == EngineMode.Implement:

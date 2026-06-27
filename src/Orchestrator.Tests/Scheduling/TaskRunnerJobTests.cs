@@ -6,6 +6,7 @@ using Orchestrator.Domain;
 using Orchestrator.Domain.Streaming;
 using Orchestrator.Infrastructure.Engines;
 using Orchestrator.Infrastructure.Scheduling;
+using Orchestrator.Infrastructure.Workflows;
 using Orchestrator.Tests.Engines;
 using Xunit;
 
@@ -53,6 +54,7 @@ public class TaskRunnerJobTests : IDisposable
             new RunCancellationRegistry(),
             Substitute.For<IEventBroadcaster>(),
             circuitBreaker ?? new ModelCircuitBreaker(Options.Create(opts)),
+            Substitute.For<IWorkflowEngine>(),
             Options.Create(opts),
             NullLogger<TaskRunnerJob>.Instance);
     }

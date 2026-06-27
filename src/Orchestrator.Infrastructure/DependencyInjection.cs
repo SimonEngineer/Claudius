@@ -8,6 +8,8 @@ using Orchestrator.Infrastructure.Discord;
 using Orchestrator.Infrastructure.Engines;
 using Orchestrator.Infrastructure.Persistence;
 using Orchestrator.Infrastructure.Scheduling;
+using Orchestrator.Infrastructure.Workflows;
+using Orchestrator.Infrastructure.Workflows.Executors;
 
 namespace Orchestrator.Infrastructure;
 
@@ -28,6 +30,7 @@ public static class DependencyInjection
 
         services.Configure<SchedulerOptions>(configuration.GetSection(SchedulerOptions.SectionName));
         services.Configure<DiscordOptions>(configuration.GetSection(DiscordOptions.SectionName));
+        services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
 
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<GitWorktreeService>();
@@ -48,7 +51,18 @@ public static class DependencyInjection
         // hosted service that drives it, sharing the same instance.
         services.AddSingleton<DiscordBotService>();
         services.AddHostedService<DiscordBotService>(sp => sp.GetRequiredService<DiscordBotService>());
+        services.AddSingleton<IDiscordNotifier>(sp => sp.GetRequiredService<DiscordBotService>());
         services.AddScoped<DiscordEventBroadcaster>();
+
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddScoped<IWorkflowNodeExecutor, SendEmailNodeExecutor>();
+        services.AddScoped<IWorkflowNodeExecutor, SendDiscordMessageNodeExecutor>();
+        services.AddScoped<IWorkflowNodeExecutor, CodeBlockNodeExecutor>();
+        services.AddScoped<IWorkflowNodeExecutor, FileLoggerNodeExecutor>();
+        services.AddScoped<WorkflowEngine>();
+        services.AddScoped<IWorkflowEngine>(sp => sp.GetRequiredService<WorkflowEngine>());
+        services.AddScoped<WorkflowCronSync>();
+        services.AddHostedService<WorkflowCronSyncStartupService>();
 
         return services;
     }

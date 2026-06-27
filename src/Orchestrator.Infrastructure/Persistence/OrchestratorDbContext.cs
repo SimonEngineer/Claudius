@@ -14,6 +14,8 @@ public class OrchestratorDbContext(DbContextOptions<OrchestratorDbContext> optio
     public DbSet<Approval> Approvals => Set<Approval>();
     public DbSet<Skill> Skills => Set<Skill>();
     public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
+    public DbSet<Workflow> Workflows => Set<Workflow>();
+    public DbSet<WorkflowRun> WorkflowRuns => Set<WorkflowRun>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -42,6 +44,7 @@ public class OrchestratorDbContext(DbContextOptions<OrchestratorDbContext> optio
         modelBuilder.Entity<TaskEvent>().Property(e => e.Type).HasConversion<string>();
         modelBuilder.Entity<Approval>().Property(a => a.Status).HasConversion<string>();
         modelBuilder.Entity<Goal>().Property(g => g.Status).HasConversion<string>();
+        modelBuilder.Entity<WorkflowRun>().Property(r => r.Status).HasConversion<string>();
 
         modelBuilder.Entity<Project>(e =>
         {
@@ -73,6 +76,11 @@ public class OrchestratorDbContext(DbContextOptions<OrchestratorDbContext> optio
         {
             e.HasIndex(a => a.ProjectId);
             e.HasIndex(a => a.CreatedAt);
+        });
+
+        modelBuilder.Entity<Workflow>(e =>
+        {
+            e.HasMany(w => w.Runs).WithOne(r => r.Workflow!).HasForeignKey(r => r.WorkflowId);
         });
     }
 }
