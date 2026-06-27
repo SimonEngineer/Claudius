@@ -5,6 +5,7 @@ import type {
   Goal,
   Overview,
   Project,
+  SystemHealth,
   TaskEventDto,
 } from "@/types/api";
 
@@ -86,4 +87,6 @@ export const api = {
   getOverview: () => request<Overview>("/api/overview"),
 
   getCosts: () => request<CostSummary>("/api/costs"),
+
+  getSystemHealth: () => request<SystemHealth>("/api/system-health"),
 };

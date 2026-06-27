@@ -5,7 +5,7 @@ import { TaskStateBadge } from "@/components/task-state-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useApprovalsStream } from "@/hooks/use-task-stream";
 import { api } from "@/lib/api";
-import type { Overview, TaskState } from "@/types/api";
+import type { LaneHealth, Overview, SystemHealth, TaskState } from "@/types/api";
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -33,11 +33,25 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function LaneHealthRow({ name, lane }: { name: string; lane: LaneHealth }) {
+  const utilizationPct = lane.capacity > 0 ? Math.round((lane.inFlight / lane.capacity) * 100) : 0;
+  return (
+    <div className="flex items-center justify-between rounded-md border p-3 text-sm">
+      <span className="font-medium">{name}</span>
+      <span className="text-muted-foreground">
+        {lane.queueDepth} queued · {lane.inFlight}/{lane.capacity} running ({utilizationPct}%)
+      </span>
+    </div>
+  );
+}
+
 export function OverviewPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
 
   const refresh = () => {
     api.getOverview().then(setOverview);
+    api.getSystemHealth().then(setHealth);
   };
 
   useEffect(() => {
@@ -63,6 +77,29 @@ export function OverviewPage() {
           project{overview.projectCount === 1 ? "" : "s"}.
         </p>
       </div>
+
+      {health && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">System health</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <div className="flex items-center justify-between text-sm">
+              <span>Database</span>
+              <span className={health.databaseHealthy ? "text-emerald-600" : "text-destructive"}>
+                {health.databaseHealthy ? "Healthy" : "Unreachable"}
+              </span>
+            </div>
+            <LaneHealthRow name="Supervisor lane" lane={health.supervisor} />
+            <LaneHealthRow name="Worker lane" lane={health.worker} />
+            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+              <span>{health.staleLeaseCount} stale lease{health.staleLeaseCount === 1 ? "" : "s"}</span>
+              <span>{health.deadLetterCount} dead-lettered task{health.deadLetterCount === 1 ? "" : "s"}</span>
+              <span>{health.pausedProjectCount} paused project{health.pausedProjectCount === 1 ? "" : "s"}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {ALL_STATES.filter((state) => overview.taskCountsByState[state]).map((state) => (

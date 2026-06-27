@@ -15,9 +15,9 @@ public class TaskClaimingService(
     IOptions<SchedulerOptions> options,
     ILogger<TaskClaimingService> logger)
 {
-    private static readonly TaskState[] SupervisorEligibleStates = [TaskState.Queued, TaskState.Verifying];
-    private static readonly TaskState[] WorkerEligibleStates = [TaskState.ReadyForWork, TaskState.NeedsFix];
-    private static readonly TaskState[] ActiveLeasedStates =
+    public static readonly TaskState[] SupervisorEligibleStates = [TaskState.Queued, TaskState.Verifying];
+    public static readonly TaskState[] WorkerEligibleStates = [TaskState.ReadyForWork, TaskState.NeedsFix];
+    public static readonly TaskState[] ActiveLeasedStates =
         [TaskState.Planning, TaskState.InProgress, TaskState.Verifying];
 
     public async Task<List<AgentTask>> ClaimNextBatchAsync(Lane lane, CancellationToken ct)

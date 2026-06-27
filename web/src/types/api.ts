@@ -156,3 +156,18 @@ export interface CostSummary {
   byProject: ProjectCost[];
   last30Days: DailyCost[];
 }
+
+export interface LaneHealth {
+  queueDepth: number;
+  inFlight: number;
+  capacity: number;
+}
+
+export interface SystemHealth {
+  databaseHealthy: boolean;
+  supervisor: LaneHealth;
+  worker: LaneHealth;
+  staleLeaseCount: number;
+  deadLetterCount: number;
+  pausedProjectCount: number;
+}
