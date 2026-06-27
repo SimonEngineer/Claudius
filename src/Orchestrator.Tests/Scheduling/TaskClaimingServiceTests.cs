@@ -175,6 +175,26 @@ public class TaskClaimingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ClaimNextBatchAsync_ExcludesTasks_WhenProjectIsPaused()
+    {
+        var pausedProject = NewProject();
+        pausedProject.IsPaused = true;
+        var activeProject = NewProject();
+        var pausedTask = NewTask(pausedProject, TaskState.ReadyForWork);
+        var activeTask = NewTask(activeProject, TaskState.ReadyForWork);
+
+        _db.Context.Projects.AddRange(pausedProject, activeProject);
+        _db.Context.Tasks.AddRange(pausedTask, activeTask);
+        await _db.Context.SaveChangesAsync();
+
+        var service = MakeService(new SchedulerOptions { WorkerConcurrency = 5 });
+        var claimed = await service.ClaimNextBatchAsync(Lane.Worker, CancellationToken.None);
+
+        Assert.Single(claimed);
+        Assert.Equal(activeTask.Id, claimed[0].Id);
+    }
+
+    [Fact]
     public async Task RequeueStaleLeasesAsync_DeadLetters_WhenRetryCountExceedsMax()
     {
         var project = NewProject();

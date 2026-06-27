@@ -28,6 +28,7 @@ export function ProjectDetailPage() {
   const [description, setDescription] = useState("");
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pauseToggling, setPauseToggling] = useState(false);
 
   const refreshTasks = () => {
     if (!projectId) return;
@@ -57,6 +58,19 @@ export function ProjectDetailPage() {
     }
   };
 
+  const handleTogglePaused = async () => {
+    if (!project) return;
+    setPauseToggling(true);
+    try {
+      const updated = project.isPaused
+        ? await api.resumeProject(project.id)
+        : await api.pauseProject(project.id);
+      setProject(updated);
+    } finally {
+      setPauseToggling(false);
+    }
+  };
+
   if (!project) {
     return <p className="p-8 text-sm text-muted-foreground">Loading...</p>;
   }
@@ -69,13 +83,24 @@ export function ProjectDetailPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+            {project.isPaused && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                Paused
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">{project.repoPath}</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>New goal</Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleTogglePaused} disabled={pauseToggling}>
+            {project.isPaused ? "Resume" : "Pause"}
+          </Button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>New goal</Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create goal</DialogTitle>
@@ -109,7 +134,8 @@ export function ProjectDetailPage() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Separator />

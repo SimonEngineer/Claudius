@@ -26,6 +26,12 @@ public class Project
 
     public int MaxWorkerConcurrency { get; set; } = 1;
     public int Priority { get; set; } = 0;
+
+    /// <summary>When true, the scheduler won't claim any new tasks for this project -- already
+    /// in-flight runs finish normally, but nothing new starts. For maintenance windows or
+    /// pausing spend without cancelling queued work.</summary>
+    public bool IsPaused { get; set; } = false;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public List<Goal> Goals { get; set; } = [];

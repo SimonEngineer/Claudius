@@ -26,6 +26,7 @@ export interface Project {
   supervisorModel: string;
   maxWorkerConcurrency: number;
   priority: number;
+  isPaused: boolean;
   createdAt: string;
 }
 

@@ -175,7 +175,14 @@ export function ProjectListPage() {
             <Link key={project.id} to={`/projects/${project.id}`}>
               <Card className="h-full transition-colors hover:bg-accent/40">
                 <CardHeader>
-                  <CardTitle>{project.name}</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <CardTitle>{project.name}</CardTitle>
+                    {project.isPaused && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        Paused
+                      </span>
+                    )}
+                  </div>
                   <CardDescription className="truncate">{project.repoPath}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">

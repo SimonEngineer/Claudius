@@ -56,6 +56,8 @@ export const api = {
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   createProject: (body: CreateProjectInput) =>
     request<Project>("/api/projects", { method: "POST", body: JSON.stringify(body) }),
+  pauseProject: (id: string) => request<Project>(`/api/projects/${id}/pause`, { method: "POST" }),
+  resumeProject: (id: string) => request<Project>(`/api/projects/${id}/resume`, { method: "POST" }),
 
   listGoals: (projectId: string) => request<Goal[]>(`/api/projects/${projectId}/goals`),
   createGoal: (projectId: string, body: CreateGoalInput) =>

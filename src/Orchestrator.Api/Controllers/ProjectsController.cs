@@ -43,4 +43,24 @@ public class ProjectsController(OrchestratorDbContext db) : ControllerBase
 
         return CreatedAtAction(nameof(Get), new { id = project.Id }, project);
     }
+
+    [HttpPost("{id:guid}/pause")]
+    public Task<ActionResult<Project>> Pause(Guid id, CancellationToken ct) => SetPaused(id, true, ct);
+
+    [HttpPost("{id:guid}/resume")]
+    public Task<ActionResult<Project>> Resume(Guid id, CancellationToken ct) => SetPaused(id, false, ct);
+
+    private async Task<ActionResult<Project>> SetPaused(Guid id, bool isPaused, CancellationToken ct)
+    {
+        var project = await db.Projects.FindAsync([id], ct);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        project.IsPaused = isPaused;
+        await db.SaveChangesAsync(ct);
+
+        return Ok(project);
+    }
 }

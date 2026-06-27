@@ -41,7 +41,7 @@ public class TaskClaimingService(
         var now = DateTimeOffset.UtcNow;
         var candidates = await db.Tasks
             .Where(t => t.Lane == lane && eligibleStates.Contains(t.State) && t.LockedBy == null
-                && (t.NextAttemptAt == null || t.NextAttemptAt <= now))
+                && (t.NextAttemptAt == null || t.NextAttemptAt <= now) && !t.Project!.IsPaused)
             .OrderByDescending(t => t.Priority)
             .ThenBy(t => t.CreatedAt)
             .Take(freeSlots * 5)
