@@ -13,6 +13,7 @@ public class OrchestratorDbContext(DbContextOptions<OrchestratorDbContext> optio
     public DbSet<TaskEvent> Events => Set<TaskEvent>();
     public DbSet<Approval> Approvals => Set<Approval>();
     public DbSet<Skill> Skills => Set<Skill>();
+    public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -66,6 +67,12 @@ public class OrchestratorDbContext(DbContextOptions<OrchestratorDbContext> optio
         modelBuilder.Entity<TaskEvent>(e =>
         {
             e.HasIndex(ev => new { ev.RunId, ev.Id });
+        });
+
+        modelBuilder.Entity<AuditLogEntry>(e =>
+        {
+            e.HasIndex(a => a.ProjectId);
+            e.HasIndex(a => a.CreatedAt);
         });
     }
 }

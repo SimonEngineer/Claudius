@@ -67,6 +67,8 @@ public class TaskLifecycleService(
             }
         }
 
+        AuditLogger.Record(db, action: "Task.Cancelled", projectId: task.ProjectId, taskId: task.Id);
+
         await db.SaveChangesAsync(ct);
 
         foreach (var t in touched)

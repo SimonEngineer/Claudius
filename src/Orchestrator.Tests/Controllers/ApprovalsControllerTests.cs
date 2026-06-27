@@ -100,4 +100,25 @@ public class ApprovalsControllerTests : IDisposable
         var reloaded = await _db.Context.Tasks.FindAsync(task.Id);
         Assert.Equal(TaskState.ReadyForWork, reloaded!.State);
     }
+
+    [Fact]
+    public async Task Approve_RecordsAuditLogEntry_WithResolvedByAsActor()
+    {
+        var project = NewProject();
+        var task = new AgentTask { ProjectId = project.Id, Title = "t", State = TaskState.AwaitingInput };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        var approval = new Approval { TaskId = task.Id, Question = "Need input" };
+        _db.Context.Approvals.Add(approval);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeController().Approve(approval.Id, new ResolveApprovalRequest("here you go", "alice"), CancellationToken.None);
+
+        var entry = Assert.Single(_db.Context.AuditLogEntries);
+        Assert.Equal("WorkerInput.Approved", entry.Action);
+        Assert.Equal("alice", entry.Actor);
+        Assert.Equal(task.Id, entry.TaskId);
+    }
 }

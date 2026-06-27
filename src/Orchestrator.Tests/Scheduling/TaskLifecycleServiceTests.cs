@@ -66,6 +66,23 @@ public class TaskLifecycleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CancelAsync_RecordsAuditLogEntry()
+    {
+        var project = NewProject();
+        var task = new AgentTask { ProjectId = project.Id, Title = "t", State = TaskState.InProgress };
+        _db.Context.Projects.Add(project);
+        _db.Context.Tasks.Add(task);
+        await _db.Context.SaveChangesAsync();
+
+        await MakeService().CancelAsync(task.Id, CancellationToken.None);
+
+        var entry = Assert.Single(_db.Context.AuditLogEntries);
+        Assert.Equal("Task.Cancelled", entry.Action);
+        Assert.Equal(task.Id, entry.TaskId);
+        Assert.Equal(project.Id, entry.ProjectId);
+    }
+
+    [Fact]
     public async Task CancelAsync_CancellingDecomposedParent_CascadesToStillActiveChildren()
     {
         var project = NewProject();

@@ -59,4 +59,19 @@ public class ProjectsControllerTests : IDisposable
 
         Assert.IsType<NotFoundResult>(result.Result);
     }
+
+    [Fact]
+    public async Task Pause_RecordsAuditLogEntry()
+    {
+        var project = NewProject();
+        _db.Context.Projects.Add(project);
+        await _db.Context.SaveChangesAsync();
+
+        var controller = new ProjectsController(_db.Context);
+        await controller.Pause(project.Id, CancellationToken.None);
+
+        var entry = Assert.Single(_db.Context.AuditLogEntries);
+        Assert.Equal("Project.Paused", entry.Action);
+        Assert.Equal(project.Id, entry.ProjectId);
+    }
 }

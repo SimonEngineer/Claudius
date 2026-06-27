@@ -87,6 +87,14 @@ public class ApprovalsController(OrchestratorDbContext db, IEventBroadcaster bro
         }
         task.UpdatedAt = DateTimeOffset.UtcNow;
 
+        AuditLogger.Record(
+            db,
+            action: $"{approval.Kind}.{status}",
+            projectId: task.ProjectId,
+            taskId: task.Id,
+            actor: request.ResolvedBy,
+            details: request.Answer);
+
         await db.SaveChangesAsync(ct);
 
         await broadcaster.BroadcastApprovalResolvedAsync(task.Id, task.ProjectId, approval.Id, status, ct);

@@ -1,6 +1,7 @@
 import type {
   AgentTask,
   Approval,
+  AuditLogEntry,
   CostSummary,
   Goal,
   Overview,
@@ -94,4 +95,9 @@ export const api = {
   getCosts: () => request<CostSummary>("/api/costs"),
 
   getSystemHealth: () => request<SystemHealth>("/api/system-health"),
+
+  getAuditLog: (projectId?: string) =>
+    request<AuditLogEntry[]>(
+      projectId ? `/api/audit-log?projectId=${projectId}` : "/api/audit-log",
+    ),
 };

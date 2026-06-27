@@ -172,6 +172,16 @@ export interface LaneHealth {
   capacity: number;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  projectId: string | null;
+  taskId: string | null;
+  action: string;
+  actor: string | null;
+  details: string | null;
+  createdAt: string;
+}
+
 export interface SystemHealth {
   databaseHealthy: boolean;
   supervisor: LaneHealth;

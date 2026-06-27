@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Orchestrator.Api.Dtos;
 using Orchestrator.Domain;
 using Orchestrator.Infrastructure.Persistence;
+using Orchestrator.Infrastructure.Scheduling;
 
 namespace Orchestrator.Api.Controllers;
 
@@ -60,6 +61,7 @@ public class ProjectsController(OrchestratorDbContext db) : ControllerBase
         }
 
         project.IsPaused = isPaused;
+        AuditLogger.Record(db, action: isPaused ? "Project.Paused" : "Project.Resumed", projectId: project.Id);
         await db.SaveChangesAsync(ct);
 
         return Ok(project);
