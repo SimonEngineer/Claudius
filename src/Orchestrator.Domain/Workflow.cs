@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Orchestrator.Domain;
 
 /// <summary>
@@ -36,6 +38,10 @@ public class WorkflowRun
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid WorkflowId { get; set; }
+
+    /// <summary>EF navigation back to the parent; ignored on the wire since the API never needs
+    /// to embed the (potentially Runs-containing) parent inside a run, and doing so would cycle.</summary>
+    [JsonIgnore]
     public Workflow? Workflow { get; set; }
 
     public WorkflowRunStatus Status { get; set; } = WorkflowRunStatus.Running;
