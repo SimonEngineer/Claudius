@@ -46,6 +46,8 @@ public class TripStop : EntityBase
     public string? Notes { get; set; }
     /// <summary>The wishlist location this stop was created from, if any.</summary>
     public Guid? SourceLocationId { get; set; }
+    /// <summary>Country name, populated from geocoding when the stop is added; used for travel stats.</summary>
+    public string? Country { get; set; }
 }
 
 public class Booking : EntityBase

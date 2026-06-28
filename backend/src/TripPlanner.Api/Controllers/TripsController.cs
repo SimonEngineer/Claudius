@@ -192,11 +192,79 @@ public class TripsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Clones the trip's plan (stops/bookings/packing list) into a new Planning-status trip; share link, emergency info, expenses, companions, documents and timeline are intentionally not copied.</summary>
+    [HttpPost("{id:guid}/duplicate")]
+    public async Task<ActionResult<TripDto>> Duplicate(Guid id)
+    {
+        var trip = await _db.Trips.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id);
+        if (trip == null) return NotFound();
+        var stops = await _db.TripStops.Where(s => s.TripId == id).ToListAsync();
+        var bookings = await _db.Bookings.Where(b => b.TripId == id).ToListAsync();
+        var packingItems = await _db.PackingItems.Where(p => p.TripId == id).ToListAsync();
+
+        var newTrip = new Trip
+        {
+            Name = $"{trip.Name} (Copy)", Description = trip.Description,
+            StartDate = trip.StartDate, EndDate = trip.EndDate,
+            Status = TripStatus.Planning, Budget = trip.Budget, BudgetCurrency = trip.BudgetCurrency,
+        };
+        _db.Trips.Add(newTrip);
+
+        foreach (var s in stops)
+            _db.TripStops.Add(new TripStop
+            {
+                TripId = newTrip.Id, Name = s.Name, Lat = s.Lat, Lng = s.Lng, ArriveDate = s.ArriveDate, DepartDate = s.DepartDate,
+                SortOrder = s.SortOrder, IsStart = s.IsStart, IsEnd = s.IsEnd, Notes = s.Notes, SourceLocationId = s.SourceLocationId, Country = s.Country,
+            });
+        foreach (var b in bookings)
+            _db.Bookings.Add(new Booking
+            {
+                TripId = newTrip.Id, Type = b.Type, Title = b.Title, ConfirmationNumber = b.ConfirmationNumber,
+                StartAt = b.StartAt, EndAt = b.EndAt, Lat = b.Lat, Lng = b.Lng, DetailsJson = b.DetailsJson, Cost = b.Cost,
+            });
+        foreach (var p in packingItems)
+            _db.PackingItems.Add(new PackingItem { TripId = newTrip.Id, Name = p.Name, IsPacked = false });
+
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(Get), new { id = newTrip.Id }, ToDto(newTrip, new()));
+    }
+
+    /// <summary>Aggregate travel stats across all trips, for the dashboard.</summary>
+    [HttpGet("stats")]
+    public async Task<ActionResult<TripStatsDto>> GetStats()
+    {
+        var trips = await _db.Trips.AsNoTracking().ToListAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var totalTrips = trips.Count;
+        var completedTrips = trips.Count(t => t.Status == TripStatus.Completed);
+        var upcomingTrips = trips.Count(t => t.StartDate.HasValue && t.StartDate.Value >= today);
+        var countries = await _db.TripStops.Where(s => s.Country != null).Select(s => s.Country!).Distinct().CountAsync();
+        var totalNights = trips.Where(t => t.StartDate.HasValue && t.EndDate.HasValue)
+            .Sum(t => Math.Max(0, t.EndDate!.Value.DayNumber - t.StartDate!.Value.DayNumber));
+        return new TripStatsDto(totalTrips, completedTrips, upcomingTrips, countries, totalNights);
+    }
+
+    /// <summary>Travel documents expiring within 90 days across all trips, for the dashboard reminder widget.</summary>
+    [HttpGet("upcoming-documents")]
+    public async Task<ActionResult<List<UpcomingDocumentDto>>> GetUpcomingDocuments()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var cutoff = today.AddDays(90);
+        var docs = await (
+            from d in _db.TravelDocuments
+            join t in _db.Trips on d.TripId equals t.Id
+            where d.ExpiryDate != null && d.ExpiryDate >= today && d.ExpiryDate <= cutoff
+            orderby d.ExpiryDate
+            select new UpcomingDocumentDto(d.Id, d.Title, d.DocType, d.ExpiryDate!.Value, t.Id, t.Name)
+        ).ToListAsync();
+        return docs;
+    }
+
     // Stops
     [HttpGet("{id:guid}/stops")]
     public async Task<ActionResult<List<TripStopDto>>> GetStops(Guid id)
         => await _db.TripStops.Where(s => s.TripId == id).OrderBy(s => s.SortOrder)
-            .Select(s => new TripStopDto(s.Id, s.Name, s.Lat, s.Lng, s.ArriveDate, s.DepartDate, s.SortOrder, s.IsStart, s.IsEnd, s.Notes, s.SourceLocationId)).ToListAsync();
+            .Select(s => new TripStopDto(s.Id, s.Name, s.Lat, s.Lng, s.ArriveDate, s.DepartDate, s.SortOrder, s.IsStart, s.IsEnd, s.Notes, s.SourceLocationId, s.Country)).ToListAsync();
 
     [HttpPost("{id:guid}/stops")]
     public async Task<ActionResult<TripStopDto>> AddStop(Guid id, TripStopCreateDto dto)
@@ -207,11 +275,11 @@ public class TripsController : ControllerBase
         {
             TripId = id, Name = dto.Name, Lat = dto.Lat, Lng = dto.Lng,
             ArriveDate = dto.ArriveDate, DepartDate = dto.DepartDate, SortOrder = dto.SortOrder,
-            IsStart = dto.IsStart, IsEnd = dto.IsEnd, Notes = dto.Notes, SourceLocationId = dto.SourceLocationId,
+            IsStart = dto.IsStart, IsEnd = dto.IsEnd, Notes = dto.Notes, SourceLocationId = dto.SourceLocationId, Country = dto.Country,
         };
         _db.TripStops.Add(stop);
         await _db.SaveChangesAsync();
-        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes, stop.SourceLocationId);
+        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes, stop.SourceLocationId, stop.Country);
     }
 
     [HttpPut("stops/{stopId:guid}")]
@@ -220,9 +288,9 @@ public class TripsController : ControllerBase
         var stop = await _db.TripStops.FindAsync(stopId);
         if (stop == null) return NotFound();
         stop.Name = dto.Name; stop.Lat = dto.Lat; stop.Lng = dto.Lng; stop.ArriveDate = dto.ArriveDate;
-        stop.DepartDate = dto.DepartDate; stop.SortOrder = dto.SortOrder; stop.IsStart = dto.IsStart; stop.IsEnd = dto.IsEnd; stop.Notes = dto.Notes;
+        stop.DepartDate = dto.DepartDate; stop.SortOrder = dto.SortOrder; stop.IsStart = dto.IsStart; stop.IsEnd = dto.IsEnd; stop.Notes = dto.Notes; stop.Country = dto.Country;
         await _db.SaveChangesAsync();
-        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes, stop.SourceLocationId);
+        return new TripStopDto(stop.Id, stop.Name, stop.Lat, stop.Lng, stop.ArriveDate, stop.DepartDate, stop.SortOrder, stop.IsStart, stop.IsEnd, stop.Notes, stop.SourceLocationId, stop.Country);
     }
 
     [HttpDelete("stops/{stopId:guid}")]

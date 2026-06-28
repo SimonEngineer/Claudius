@@ -2,12 +2,23 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { LocationsApi, GoalsApi, TripsApi } from '@/api/resources'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { MapPinned, Target, Plane, CalendarClock } from 'lucide-react'
+import { MapPinned, Target, Plane, CalendarClock, Globe2, BedDouble, CheckCircle2, FileWarning } from 'lucide-react'
+import { DocumentType } from '@/types'
+
+const docTypeLabels: Record<number, string> = {
+  [DocumentType.Passport]: 'Passport',
+  [DocumentType.Visa]: 'Visa',
+  [DocumentType.Insurance]: 'Insurance',
+  [DocumentType.BookingConfirmation]: 'Booking confirmation',
+  [DocumentType.Other]: 'Document',
+}
 
 export function DashboardPage() {
   const { data: locations = [] } = useQuery({ queryKey: ['locations'], queryFn: LocationsApi.list })
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: GoalsApi.list })
   const { data: trips = [] } = useQuery({ queryKey: ['trips'], queryFn: TripsApi.list })
+  const { data: stats } = useQuery({ queryKey: ['trip-stats'], queryFn: TripsApi.stats })
+  const { data: upcomingDocuments = [] } = useQuery({ queryKey: ['upcoming-documents'], queryFn: TripsApi.upcomingDocuments })
 
   const upcomingTrips = trips.filter((t) => t.status !== 3).slice(0, 3)
 
@@ -38,6 +49,51 @@ export function DashboardPage() {
         </Link>
       ) : (
         <Card><CardContent className="p-4 text-sm text-muted-foreground">No upcoming trips with a start date set.</CardContent></Card>
+      )}
+
+      {stats && (
+        <section>
+          <h2 className="mb-2 text-lg font-semibold">Travel stats</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card><CardContent className="flex items-center gap-3 p-4">
+              <CheckCircle2 className="h-6 w-6 text-primary" />
+              <div><div className="text-xl font-bold">{stats.completedTrips}</div><div className="text-xs text-muted-foreground">Trips completed</div></div>
+            </CardContent></Card>
+            <Card><CardContent className="flex items-center gap-3 p-4">
+              <Globe2 className="h-6 w-6 text-primary" />
+              <div><div className="text-xl font-bold">{stats.countriesVisited}</div><div className="text-xs text-muted-foreground">Countries visited</div></div>
+            </CardContent></Card>
+            <Card><CardContent className="flex items-center gap-3 p-4">
+              <BedDouble className="h-6 w-6 text-primary" />
+              <div><div className="text-xl font-bold">{stats.totalNights}</div><div className="text-xs text-muted-foreground">Nights away</div></div>
+            </CardContent></Card>
+            <Card><CardContent className="flex items-center gap-3 p-4">
+              <Plane className="h-6 w-6 text-primary" />
+              <div><div className="text-xl font-bold">{stats.upcomingTrips}</div><div className="text-xs text-muted-foreground">Upcoming trips</div></div>
+            </CardContent></Card>
+          </div>
+        </section>
+      )}
+
+      {upcomingDocuments.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-lg font-semibold">Documents expiring soon</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {upcomingDocuments.map((d) => (
+              <Link to={`/trips/${d.tripId}`} key={d.id}>
+                <Card>
+                  <CardContent className="flex items-center gap-3 p-4">
+                    <FileWarning className="h-5 w-5 text-destructive shrink-0" />
+                    <div>
+                      <div className="font-medium">{d.title} <span className="text-xs text-muted-foreground">({docTypeLabels[d.docType] ?? 'Document'})</span></div>
+                      <div className="text-sm text-muted-foreground">Expires {d.expiryDate} · {d.tripName}</div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

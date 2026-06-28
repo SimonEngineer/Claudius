@@ -4,6 +4,7 @@ import type {
   Goal, GoalFieldDefinition, GoalItem, GoalItemFieldValue,
   Trip, TripStop, Booking, TimelineEntry, MediaItem, EntityTypeValue, GoalFieldTypeValue,
   PackingItem, TripLink, Expense, TripCompanion, TravelDocument, PublicTrip,
+  TripStats, UpcomingDocument, SearchResult, GeocodeResult,
 } from '@/types'
 
 // Tags
@@ -132,6 +133,20 @@ export const TripsApi = {
   revokeShareLink: (id: string) => api.delete<Trip>(`/trips/${id}/share`).then((r) => r.data),
   updateEmergencyInfo: (id: string, emergencyInfo: string | null) => api.put<Trip>(`/trips/${id}/emergency-info`, { emergencyInfo }).then((r) => r.data),
   calendarUrl: (id: string) => `/api/trips/${id}/calendar.ics`,
+
+  duplicate: (id: string) => api.post<Trip>(`/trips/${id}/duplicate`).then((r) => r.data),
+  stats: () => api.get<TripStats>('/trips/stats').then((r) => r.data),
+  upcomingDocuments: () => api.get<UpcomingDocument[]>('/trips/upcoming-documents').then((r) => r.data),
+}
+
+// Global search
+export const SearchApi = {
+  search: (q: string) => api.get<SearchResult[]>('/search', { params: { q } }).then((r) => r.data),
+}
+
+// Geocoding (keyless proxy)
+export const GeocodeApi = {
+  search: (q: string) => api.get<GeocodeResult[]>('/geocode/search', { params: { q } }).then((r) => r.data),
 }
 
 // Public (unauthenticated, read-only shared trip view)

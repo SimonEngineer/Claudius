@@ -165,6 +165,7 @@ export interface TripStop {
   isEnd: boolean
   notes?: string | null
   sourceLocationId?: string | null
+  country?: string | null
 }
 
 export const BookingType = { Flight: 1, Hotel: 2, CarRental: 3, Ticket: 4, Other: 5 } as const
@@ -236,6 +237,37 @@ export interface TravelDocument {
   expiryDate?: string | null
   url?: string | null
   notes?: string | null
+}
+
+export interface TripStats {
+  totalTrips: number
+  completedTrips: number
+  upcomingTrips: number
+  countriesVisited: number
+  totalNights: number
+}
+
+export interface UpcomingDocument {
+  id: string
+  title: string
+  docType: number
+  expiryDate: string
+  tripId: string
+  tripName: string
+}
+
+export interface SearchResult {
+  type: 'Trip' | 'Wishlist' | 'Goal'
+  id: string
+  title: string
+  subtitle?: string | null
+}
+
+export interface GeocodeResult {
+  label: string
+  lat: number
+  lng: number
+  country?: string | null
 }
 
 export interface PublicTrip {

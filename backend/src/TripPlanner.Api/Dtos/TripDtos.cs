@@ -16,8 +16,13 @@ public record TravelDocumentCreateDto(string Title, DocumentType DocType, DateOn
 public record PublicTripDto(string Name, string? Description, DateOnly? StartDate, DateOnly? EndDate, TripStatus Status,
     List<TripStopDto> Stops, List<BookingDto> Bookings, List<TimelineEntryDto> Timeline);
 
-public record TripStopDto(Guid Id, string Name, double Lat, double Lng, DateOnly? ArriveDate, DateOnly? DepartDate, int SortOrder, bool IsStart, bool IsEnd, string? Notes, Guid? SourceLocationId);
-public record TripStopCreateDto(string Name, double Lat, double Lng, DateOnly? ArriveDate, DateOnly? DepartDate, int SortOrder, bool IsStart, bool IsEnd, string? Notes, Guid? SourceLocationId);
+public record TripStopDto(Guid Id, string Name, double Lat, double Lng, DateOnly? ArriveDate, DateOnly? DepartDate, int SortOrder, bool IsStart, bool IsEnd, string? Notes, Guid? SourceLocationId, string? Country);
+public record TripStopCreateDto(string Name, double Lat, double Lng, DateOnly? ArriveDate, DateOnly? DepartDate, int SortOrder, bool IsStart, bool IsEnd, string? Notes, Guid? SourceLocationId, string? Country);
+
+public record TripStatsDto(int TotalTrips, int CompletedTrips, int UpcomingTrips, int CountriesVisited, int TotalNights);
+public record UpcomingDocumentDto(Guid Id, string Title, DocumentType DocType, DateOnly ExpiryDate, Guid TripId, string TripName);
+public record SearchResultDto(string Type, Guid Id, string Title, string? Subtitle);
+public record GeocodeResultDto(string Label, double Lat, double Lng, string? Country);
 
 public record BookingDto(Guid Id, BookingType Type, string Title, string? ConfirmationNumber, DateTime? StartAt, DateTime? EndAt, double? Lat, double? Lng, string? DetailsJson, decimal? Cost);
 public record BookingCreateDto(BookingType Type, string Title, string? ConfirmationNumber, DateTime? StartAt, DateTime? EndAt, double? Lat, double? Lng, string? DetailsJson, decimal? Cost);

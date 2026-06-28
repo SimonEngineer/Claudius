@@ -20,7 +20,7 @@ public class PublicController : ControllerBase
         if (trip == null) return NotFound();
 
         var stops = await _db.TripStops.Where(s => s.TripId == trip.Id).OrderBy(s => s.SortOrder)
-            .Select(s => new TripStopDto(s.Id, s.Name, s.Lat, s.Lng, s.ArriveDate, s.DepartDate, s.SortOrder, s.IsStart, s.IsEnd, s.Notes, s.SourceLocationId)).ToListAsync();
+            .Select(s => new TripStopDto(s.Id, s.Name, s.Lat, s.Lng, s.ArriveDate, s.DepartDate, s.SortOrder, s.IsStart, s.IsEnd, s.Notes, s.SourceLocationId, s.Country)).ToListAsync();
         var bookings = await _db.Bookings.Where(b => b.TripId == trip.Id).OrderBy(b => b.StartAt)
             .Select(b => new BookingDto(b.Id, b.Type, b.Title, b.ConfirmationNumber, b.StartAt, b.EndAt, b.Lat, b.Lng, b.DetailsJson, null)).ToListAsync();
         var timeline = await _db.TimelineEntries.Where(e => e.TripId == trip.Id).OrderBy(e => e.CapturedAt)

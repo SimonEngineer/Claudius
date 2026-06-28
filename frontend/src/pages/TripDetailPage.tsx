@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { TripsApi, MediaApi, FxApi } from '@/api/resources'
@@ -20,8 +20,10 @@ import { LocationMap } from '@/components/LocationMap'
 import { useToast, getErrorMessage } from '@/components/ui/toast'
 import {
   ArrowLeft, Plus, Camera, StickyNote, Link2, Trash2, Pencil, ChevronUp, ChevronDown, MapPin, CalendarDays,
-  Share2, Copy, FileText, ShieldAlert, Users, Download, Clock, Cloud,
+  Share2, Copy, FileText, ShieldAlert, Users, Download, Clock, Cloud, Printer, FileJson, CopyPlus, Search,
 } from 'lucide-react'
+import { GeocodeApi } from '@/api/resources'
+import type { GeocodeResult } from '@/types'
 
 const BOOKING_LABEL: Record<number, string> = {
   [BookingType.Flight]: 'Flight', [BookingType.Hotel]: 'Hotel', [BookingType.CarRental]: 'Car rental',
@@ -89,16 +91,34 @@ function isCheckInSoon(startAt: string): boolean {
 }
 
 interface WeatherDay { date: string; max: number; min: number; code: number }
+interface WeatherResult { days: WeatherDay[]; timezone: string }
 
-async function fetchWeather(lat: number, lng: number): Promise<WeatherDay[]> {
+async function fetchWeather(lat: number, lng: number): Promise<WeatherResult> {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto&forecast_days=7`
   const res = await fetch(url)
   if (!res.ok) throw new Error('Weather lookup failed')
   const json = await res.json()
   const dates: string[] = json.daily.time
-  return dates.map((date, i) => ({
+  const days = dates.map((date, i) => ({
     date, max: json.daily.temperature_2m_max[i], min: json.daily.temperature_2m_min[i], code: json.daily.weathercode[i],
   }))
+  return { days, timezone: json.timezone }
+}
+
+function LocalDestinationTime({ timezone }: { timezone: string }) {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 30_000); return () => clearInterval(t) }, [])
+  let formatted: string
+  try {
+    formatted = new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: '2-digit', minute: '2-digit', weekday: 'short' }).format(now)
+  } catch {
+    return null
+  }
+  return (
+    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+      <Clock className="h-3.5 w-3.5" /> Local time: {formatted}
+    </div>
+  )
 }
 
 interface DayPlan { date: string; stops: TripStop[]; bookings: Booking[] }
@@ -136,7 +156,7 @@ function buildDayPlan(trip: { startDate?: string | null; endDate?: string | null
   return days
 }
 
-const EMPTY_STOP_FORM = { name: '', lat: '', lng: '', arriveDate: '', departDate: '', isStart: false, isEnd: false, notes: '' }
+const EMPTY_STOP_FORM = { name: '', lat: '', lng: '', arriveDate: '', departDate: '', isStart: false, isEnd: false, notes: '', country: '' }
 const EMPTY_BOOKING_FORM: { type: string; title: string; confirmationNumber: string; startAt: string; endAt: string; cost: string; fields: Record<string, string> } =
   { type: String(BookingType.Flight), title: '', confirmationNumber: '', startAt: '', endAt: '', cost: '', fields: {} }
 const EMPTY_EXPENSE_FORM = {
@@ -179,16 +199,21 @@ export function TripDetailPage() {
     onSuccess: () => navigate('/trips'),
     onError: onErr,
   })
+  const duplicateTrip = useMutation({
+    mutationFn: () => TripsApi.duplicate(id),
+    onSuccess: (newTrip) => navigate(`/trips/${newTrip.id}`),
+    onError: onErr,
+  })
 
   const [stopOpen, setStopOpen] = useState(false)
   const [editingStopId, setEditingStopId] = useState<string | null>(null)
   const [stopForm, setStopForm] = useState(EMPTY_STOP_FORM)
-  const closeStopDialog = () => { setStopOpen(false); setEditingStopId(null); setStopForm(EMPTY_STOP_FORM) }
+  const closeStopDialog = () => { setStopOpen(false); setEditingStopId(null); setStopForm(EMPTY_STOP_FORM); setPlaceQuery(''); setPlaceResults([]) }
   const startEditStop = (s: TripStop) => {
     setEditingStopId(s.id)
     setStopForm({
       name: s.name, lat: String(s.lat), lng: String(s.lng), arriveDate: s.arriveDate ?? '', departDate: s.departDate ?? '',
-      isStart: s.isStart, isEnd: s.isEnd, notes: s.notes ?? '',
+      isStart: s.isStart, isEnd: s.isEnd, notes: s.notes ?? '', country: s.country ?? '',
     })
     setStopOpen(true)
   }
@@ -200,12 +225,31 @@ export function TripDetailPage() {
         sortOrder: editingStopId ? stops.find((s) => s.id === editingStopId)!.sortOrder : stops.length,
         isStart: stopForm.isStart, isEnd: stopForm.isEnd, notes: stopForm.notes || null,
         sourceLocationId: editingStopId ? stops.find((s) => s.id === editingStopId)?.sourceLocationId ?? null : null,
+        country: stopForm.country || null,
       }
       return editingStopId ? TripsApi.updateStop(editingStopId, payload) : TripsApi.addStop(id, payload)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'stops'] }); closeStopDialog() },
     onError: onErr,
   })
+
+  const [placeQuery, setPlaceQuery] = useState('')
+  const [placeResults, setPlaceResults] = useState<GeocodeResult[]>([])
+  const [placeSearching, setPlaceSearching] = useState(false)
+  useEffect(() => {
+    if (placeQuery.trim().length < 3) { setPlaceResults([]); return }
+    const t = setTimeout(async () => {
+      setPlaceSearching(true)
+      try { setPlaceResults(await GeocodeApi.search(placeQuery)) } catch { setPlaceResults([]) }
+      setPlaceSearching(false)
+    }, 500)
+    return () => clearTimeout(t)
+  }, [placeQuery])
+  const pickPlace = (r: GeocodeResult) => {
+    setStopForm({ ...stopForm, name: stopForm.name || r.label.split(',')[0], lat: r.lat.toFixed(5), lng: r.lng.toFixed(5), country: r.country ?? stopForm.country })
+    setPlaceResults([])
+    setPlaceQuery('')
+  }
   const removeStop = useMutation({
     mutationFn: (stopId: string) => TripsApi.removeStop(stopId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id, 'stops'] }),
@@ -407,6 +451,11 @@ export function TripDetailPage() {
 
   const sortedStops = useMemo(() => [...stops].sort((a, b) => a.sortOrder - b.sortOrder), [stops])
   const pins = sortedStops.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, label: s.name }))
+  const overviewPins = useMemo(() => [
+    ...sortedStops.map((s) => ({ id: `stop-${s.id}`, lat: s.lat, lng: s.lng, label: `📍 ${s.name}` })),
+    ...bookings.filter((b) => b.lat != null && b.lng != null).map((b) => ({ id: `booking-${b.id}`, lat: b.lat!, lng: b.lng!, label: `${BOOKING_LABEL[b.type]}: ${b.title}` })),
+    ...timeline.filter((e) => e.lat != null && e.lng != null).map((e) => ({ id: `entry-${e.id}`, lat: e.lat!, lng: e.lng!, label: e.content ?? 'Journal entry' })),
+  ], [sortedStops, bookings, timeline])
   const dayPlan = useMemo(() => (trip ? buildDayPlan(trip, stops, bookings) : []), [trip, stops, bookings])
   const budgetTotal = bookings.reduce((sum, b) => sum + (b.cost ?? 0), 0)
   const stopNameById = (stopId?: string | null) => stopId ? stops.find((s) => s.id === stopId)?.name : undefined
@@ -479,6 +528,17 @@ export function TripDetailPage() {
     staleTime: 30 * 60_000,
   })
 
+  const exportTripData = () => {
+    const data = { trip, stops: sortedStops, bookings, expenses, documents, companions, timeline, packingItems }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${trip!.name.replace(/[^a-z0-9]+/gi, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (!trip) return null
 
   return (
@@ -493,13 +553,16 @@ export function TripDetailPage() {
           <p className="text-muted-foreground">{trip.startDate} → {trip.endDate}</p>
           <span className="mt-1 inline-block rounded-full bg-secondary px-2 py-0.5 text-xs">{STATUS_LABEL[computedStatus(trip.startDate, trip.endDate, trip.status)]}</span>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 print:hidden">
           <Button variant={tripMode ? 'default' : 'outline'} onClick={() => setTripMode((m) => !m)}>
             {tripMode ? 'On the trip ✓' : 'On the trip?'}
           </Button>
           <Button variant="outline" size="icon" asChild>
             <a href={TripsApi.calendarUrl(id)} download title="Add bookings to calendar (.ics)"><Download className="h-4 w-4" /></a>
           </Button>
+          <Button variant="outline" size="icon" onClick={exportTripData} title="Export trip data as JSON"><FileJson className="h-4 w-4" /></Button>
+          <Button variant="outline" size="icon" onClick={() => window.print()} title="Print itinerary"><Printer className="h-4 w-4" /></Button>
+          <Button variant="outline" size="icon" onClick={() => duplicateTrip.mutate()} title="Duplicate trip"><CopyPlus className="h-4 w-4" /></Button>
           <Dialog open={emergencyOpen} onOpenChange={(o) => { setEmergencyOpen(o); if (o) setEmergencyText(trip.emergencyInfo ?? '') }}>
             <Button variant="outline" size="icon" onClick={() => setEmergencyOpen(true)} title="Emergency info"><ShieldAlert className="h-4 w-4" /></Button>
             <DialogContent>
@@ -571,7 +634,7 @@ export function TripDetailPage() {
       </div>
 
       <Tabs key={tripMode ? 'trip' : 'plan'} defaultValue={tripMode ? 'journal' : 'itinerary'}>
-        <TabsList>
+        <TabsList className="print:hidden">
           {!tripMode && (
             <>
               <TabsTrigger value="itinerary">Day-by-day</TabsTrigger>
@@ -587,12 +650,23 @@ export function TripDetailPage() {
 
         <TabsContent value="itinerary">
           <div className="flex flex-col gap-2">
-            {firstStop && weather.data && weather.data.length > 0 && (
+            {overviewPins.length > 0 && (
               <Card>
                 <CardContent className="p-3">
-                  <div className="flex items-center gap-1.5 font-medium mb-2 text-sm"><Cloud className="h-4 w-4 text-muted-foreground" /> Weather near {firstStop.name}</div>
+                  <div className="font-medium mb-2 text-sm">Trip overview</div>
+                  <LocationMap pins={overviewPins} height={280} />
+                </CardContent>
+              </Card>
+            )}
+            {firstStop && weather.data && weather.data.days.length > 0 && (
+              <Card>
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5 font-medium text-sm"><Cloud className="h-4 w-4 text-muted-foreground" /> Weather near {firstStop.name}</div>
+                    <LocalDestinationTime timezone={weather.data.timezone} />
+                  </div>
                   <div className="flex gap-3 overflow-x-auto">
-                    {weather.data.slice(0, 7).map((d) => (
+                    {weather.data.days.slice(0, 7).map((d) => (
                       <div key={d.date} className="flex flex-col items-center text-xs shrink-0 min-w-[3.5rem]">
                         <div className="text-muted-foreground">{new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short' })}</div>
                         <div className="mt-1">{Math.round(d.max)}° / {Math.round(d.min)}°</div>
@@ -646,6 +720,29 @@ export function TripDetailPage() {
                   <DialogHeader><DialogTitle>{editingStopId ? 'Edit stop' : 'Add stop'}</DialogTitle></DialogHeader>
                   <div className="flex flex-col gap-3">
                     <div><Label>Name</Label><Input value={stopForm.name} onChange={(e) => setStopForm({ ...stopForm, name: e.target.value })} /></div>
+                    <div className="relative">
+                      <Label className="flex items-center gap-1"><Search className="h-3 w-3" /> Search for a place</Label>
+                      <Input
+                        value={placeQuery}
+                        onChange={(e) => setPlaceQuery(e.target.value)}
+                        placeholder="e.g. Lisbon, Portugal"
+                      />
+                      {placeSearching && <div className="absolute right-2 top-8 text-xs text-muted-foreground">Searching…</div>}
+                      {placeResults.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full rounded-md border bg-card shadow-lg max-h-48 overflow-y-auto">
+                          {placeResults.map((r, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => pickPlace(r)}
+                              className="flex w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                            >
+                              {r.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div>
                       <Label className="flex items-center gap-1"><MapPin className="h-3 w-3" /> Click the map to set location</Label>
                       <LocationMap
