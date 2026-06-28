@@ -3,7 +3,7 @@ import type {
   Tag, TagUsage, WishlistLocation, WishlistNote, WishlistLink, WishlistPlan, Whiteboard,
   Goal, GoalFieldDefinition, GoalItem, GoalItemFieldValue,
   Trip, TripStop, Booking, TimelineEntry, MediaItem, EntityTypeValue, GoalFieldTypeValue,
-  PackingItem, TripLink, Expense,
+  PackingItem, TripLink, Expense, TripCompanion, TravelDocument, PublicTrip,
 } from '@/types'
 
 // Tags
@@ -118,4 +118,28 @@ export const TripsApi = {
   addExpense: (id: string, data: Omit<Expense, 'id'>) => api.post<Expense>(`/trips/${id}/expenses`, data).then((r) => r.data),
   updateExpense: (expenseId: string, data: Omit<Expense, 'id'>) => api.put<Expense>(`/trips/expenses/${expenseId}`, data).then((r) => r.data),
   removeExpense: (expenseId: string) => api.delete(`/trips/expenses/${expenseId}`),
+
+  companions: (id: string) => api.get<TripCompanion[]>(`/trips/${id}/companions`).then((r) => r.data),
+  addCompanion: (id: string, name: string) => api.post<TripCompanion>(`/trips/${id}/companions`, { name }).then((r) => r.data),
+  removeCompanion: (companionId: string) => api.delete(`/trips/companions/${companionId}`),
+
+  documents: (id: string) => api.get<TravelDocument[]>(`/trips/${id}/documents`).then((r) => r.data),
+  addDocument: (id: string, data: Omit<TravelDocument, 'id'>) => api.post<TravelDocument>(`/trips/${id}/documents`, data).then((r) => r.data),
+  updateDocument: (documentId: string, data: Omit<TravelDocument, 'id'>) => api.put<TravelDocument>(`/trips/documents/${documentId}`, data).then((r) => r.data),
+  removeDocument: (documentId: string) => api.delete(`/trips/documents/${documentId}`),
+
+  createShareLink: (id: string) => api.post<Trip>(`/trips/${id}/share`).then((r) => r.data),
+  revokeShareLink: (id: string) => api.delete<Trip>(`/trips/${id}/share`).then((r) => r.data),
+  updateEmergencyInfo: (id: string, emergencyInfo: string | null) => api.put<Trip>(`/trips/${id}/emergency-info`, { emergencyInfo }).then((r) => r.data),
+  calendarUrl: (id: string) => `/api/trips/${id}/calendar.ics`,
+}
+
+// Public (unauthenticated, read-only shared trip view)
+export const PublicApi = {
+  getSharedTrip: (slug: string) => api.get<PublicTrip>(`/public/trips/${slug}`).then((r) => r.data),
+}
+
+// Currency conversion (keyless proxy)
+export const FxApi = {
+  getRate: (from: string, to: string) => api.get<{ rate: number }>('/fx/rate', { params: { from, to } }).then((r) => r.data.rate),
 }

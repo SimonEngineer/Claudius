@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { TripsApi, MediaApi } from '@/api/resources'
+import { TripsApi, MediaApi, FxApi } from '@/api/resources'
 import { cn } from '@/lib/utils'
-import { BookingType, TimelineEntryType, MediaKind, EntityType, TripStatus, ExpenseCategory } from '@/types'
-import type { TripStop, Booking, Expense } from '@/types'
+import { BookingType, TimelineEntryType, MediaKind, EntityType, TripStatus, ExpenseCategory, DocumentType } from '@/types'
+import type { TripStop, Booking, Expense, TravelDocument } from '@/types'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,10 @@ import {
 } from '@/components/ui/dialog'
 import { LocationMap } from '@/components/LocationMap'
 import { useToast, getErrorMessage } from '@/components/ui/toast'
-import { ArrowLeft, Plus, Camera, StickyNote, Link2, Trash2, Pencil, ChevronUp, ChevronDown, MapPin, CalendarDays } from 'lucide-react'
+import {
+  ArrowLeft, Plus, Camera, StickyNote, Link2, Trash2, Pencil, ChevronUp, ChevronDown, MapPin, CalendarDays,
+  Share2, Copy, FileText, ShieldAlert, Users, Download, Clock, Cloud,
+} from 'lucide-react'
 
 const BOOKING_LABEL: Record<number, string> = {
   [BookingType.Flight]: 'Flight', [BookingType.Hotel]: 'Hotel', [BookingType.CarRental]: 'Car rental',
@@ -28,6 +31,17 @@ const STATUS_LABEL: Record<number, string> = { [TripStatus.Planning]: 'Planning'
 const EXPENSE_CATEGORY_LABEL: Record<number, string> = {
   [ExpenseCategory.Lodging]: 'Lodging', [ExpenseCategory.Transport]: 'Transport',
   [ExpenseCategory.Food]: 'Food', [ExpenseCategory.Activities]: 'Activities', [ExpenseCategory.Other]: 'Other',
+}
+const DOCUMENT_TYPE_LABEL: Record<number, string> = {
+  [DocumentType.Passport]: 'Passport', [DocumentType.Visa]: 'Visa', [DocumentType.Insurance]: 'Insurance',
+  [DocumentType.BookingConfirmation]: 'Booking confirmation', [DocumentType.Other]: 'Other',
+}
+const PACKING_TEMPLATES: Record<string, string[]> = {
+  Beach: ['Swimsuit', 'Sunscreen', 'Sunglasses', 'Flip-flops', 'Beach towel'],
+  Winter: ['Coat', 'Gloves', 'Scarf', 'Thermal layers', 'Snow boots'],
+  Business: ['Laptop + charger', 'Business cards', 'Dress shoes', 'Suit/blazer', 'Notebook'],
+  Hiking: ['Hiking boots', 'Backpack', 'Water bottle', 'First aid kit', 'Trail snacks'],
+  International: ['Passport', 'Travel adapter', 'Currency/cards', 'Copies of documents', 'Phrasebook/translation app'],
 }
 
 function computedStatus(startDate?: string | null, endDate?: string | null, fallback: number = TripStatus.Planning): number {
@@ -60,6 +74,31 @@ const BOOKING_FIELD_SCHEMA: Record<number, { key: string; label: string }[]> = {
 function parseDetails(json?: string | null): Record<string, string> {
   if (!json) return {}
   try { return JSON.parse(json) } catch { return { notes: json } }
+}
+
+const WEATHER_CODE_LABEL: Record<number, string> = {
+  0: 'Clear sky', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Overcast',
+  45: 'Fog', 48: 'Fog', 51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
+  61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
+  80: 'Rain showers', 81: 'Rain showers', 82: 'Violent showers', 95: 'Thunderstorm',
+}
+
+function isCheckInSoon(startAt: string): boolean {
+  const hoursUntil = (new Date(startAt).getTime() - Date.now()) / 3_600_000
+  return hoursUntil > 0 && hoursUntil <= 24
+}
+
+interface WeatherDay { date: string; max: number; min: number; code: number }
+
+async function fetchWeather(lat: number, lng: number): Promise<WeatherDay[]> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto&forecast_days=7`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('Weather lookup failed')
+  const json = await res.json()
+  const dates: string[] = json.daily.time
+  return dates.map((date, i) => ({
+    date, max: json.daily.temperature_2m_max[i], min: json.daily.temperature_2m_min[i], code: json.daily.weathercode[i],
+  }))
 }
 
 interface DayPlan { date: string; stops: TripStop[]; bookings: Booking[] }
@@ -100,7 +139,11 @@ function buildDayPlan(trip: { startDate?: string | null; endDate?: string | null
 const EMPTY_STOP_FORM = { name: '', lat: '', lng: '', arriveDate: '', departDate: '', isStart: false, isEnd: false, notes: '' }
 const EMPTY_BOOKING_FORM: { type: string; title: string; confirmationNumber: string; startAt: string; endAt: string; cost: string; fields: Record<string, string> } =
   { type: String(BookingType.Flight), title: '', confirmationNumber: '', startAt: '', endAt: '', cost: '', fields: {} }
-const EMPTY_EXPENSE_FORM = { category: String(ExpenseCategory.Other), amount: '', currency: 'USD', date: '', note: '' }
+const EMPTY_EXPENSE_FORM = {
+  category: String(ExpenseCategory.Other), amount: '', currency: 'USD', date: '', note: '',
+  paidByCompanionId: '', splitCompanionIds: [] as string[],
+}
+const EMPTY_DOCUMENT_FORM = { title: '', docType: String(DocumentType.Passport), expiryDate: '', url: '', notes: '' }
 
 export function TripDetailPage() {
   const { id = '' } = useParams()
@@ -115,6 +158,8 @@ export function TripDetailPage() {
   const { data: timeline = [] } = useQuery({ queryKey: ['trip', id, 'timeline'], queryFn: () => TripsApi.timeline(id) })
   const { data: packingItems = [] } = useQuery({ queryKey: ['trip', id, 'packing'], queryFn: () => TripsApi.packing(id) })
   const { data: expenses = [] } = useQuery({ queryKey: ['trip', id, 'expenses'], queryFn: () => TripsApi.expenses(id) })
+  const { data: companions = [] } = useQuery({ queryKey: ['trip', id, 'companions'], queryFn: () => TripsApi.companions(id) })
+  const { data: documents = [] } = useQuery({ queryKey: ['trip', id, 'documents'], queryFn: () => TripsApi.documents(id) })
 
   const onErr = (err: unknown) => showError(getErrorMessage(err))
 
@@ -276,7 +321,10 @@ export function TripDetailPage() {
   const closeExpenseDialog = () => { setExpenseOpen(false); setEditingExpenseId(null); setExpenseForm(EMPTY_EXPENSE_FORM) }
   const startEditExpense = (e: Expense) => {
     setEditingExpenseId(e.id)
-    setExpenseForm({ category: String(e.category), amount: String(e.amount), currency: e.currency, date: e.date, note: e.note ?? '' })
+    setExpenseForm({
+      category: String(e.category), amount: String(e.amount), currency: e.currency, date: e.date, note: e.note ?? '',
+      paidByCompanionId: e.paidByCompanionId ?? '', splitCompanionIds: e.splitCompanionIds,
+    })
     setExpenseOpen(true)
   }
   const saveExpense = useMutation({
@@ -284,6 +332,7 @@ export function TripDetailPage() {
       const payload = {
         category: Number(expenseForm.category), amount: parseFloat(expenseForm.amount), currency: expenseForm.currency,
         date: expenseForm.date, note: expenseForm.note || null, bookingId: null,
+        paidByCompanionId: expenseForm.paidByCompanionId || null, splitCompanionIds: expenseForm.splitCompanionIds,
       }
       return editingExpenseId ? TripsApi.updateExpense(editingExpenseId, payload) : TripsApi.addExpense(id, payload)
     },
@@ -296,6 +345,66 @@ export function TripDetailPage() {
     onError: onErr,
   })
 
+  const [companionName, setCompanionName] = useState('')
+  const addCompanion = useMutation({
+    mutationFn: () => TripsApi.addCompanion(id, companionName),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'companions'] }); setCompanionName('') },
+    onError: onErr,
+  })
+  const removeCompanion = useMutation({
+    mutationFn: (companionId: string) => TripsApi.removeCompanion(companionId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id, 'companions'] }),
+    onError: onErr,
+  })
+
+  const [documentOpen, setDocumentOpen] = useState(false)
+  const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
+  const [documentForm, setDocumentForm] = useState(EMPTY_DOCUMENT_FORM)
+  const closeDocumentDialog = () => { setDocumentOpen(false); setEditingDocumentId(null); setDocumentForm(EMPTY_DOCUMENT_FORM) }
+  const startEditDocument = (d: TravelDocument) => {
+    setEditingDocumentId(d.id)
+    setDocumentForm({ title: d.title, docType: String(d.docType), expiryDate: d.expiryDate ?? '', url: d.url ?? '', notes: d.notes ?? '' })
+    setDocumentOpen(true)
+  }
+  const saveDocument = useMutation({
+    mutationFn: () => {
+      const payload = {
+        title: documentForm.title, docType: Number(documentForm.docType), expiryDate: documentForm.expiryDate || null,
+        url: documentForm.url || null, notes: documentForm.notes || null,
+      }
+      return editingDocumentId ? TripsApi.updateDocument(editingDocumentId, payload) : TripsApi.addDocument(id, payload)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id, 'documents'] }); closeDocumentDialog() },
+    onError: onErr,
+  })
+  const removeDocument = useMutation({
+    mutationFn: (documentId: string) => TripsApi.removeDocument(documentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id, 'documents'] }),
+    onError: onErr,
+  })
+
+  const [emergencyOpen, setEmergencyOpen] = useState(false)
+  const [emergencyText, setEmergencyText] = useState('')
+  const saveEmergencyInfo = useMutation({
+    mutationFn: () => TripsApi.updateEmergencyInfo(id, emergencyText || null),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['trip', id] }); setEmergencyOpen(false) },
+    onError: onErr,
+  })
+
+  const [shareOpen, setShareOpen] = useState(false)
+  const createShareLink = useMutation({
+    mutationFn: () => TripsApi.createShareLink(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id] }),
+    onError: onErr,
+  })
+  const revokeShareLink = useMutation({
+    mutationFn: () => TripsApi.revokeShareLink(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['trip', id] }),
+    onError: onErr,
+  })
+  const [copied, setCopied] = useState(false)
+  const [copiedConfId, setCopiedConfId] = useState<string | null>(null)
+
   const sortedStops = useMemo(() => [...stops].sort((a, b) => a.sortOrder - b.sortOrder), [stops])
   const pins = sortedStops.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, label: s.name }))
   const dayPlan = useMemo(() => (trip ? buildDayPlan(trip, stops, bookings) : []), [trip, stops, bookings])
@@ -307,6 +416,68 @@ export function TripDetailPage() {
     for (const e of expenses) map.set(e.category, (map.get(e.category) ?? 0) + e.amount)
     return [...map.entries()].sort((a, b) => b[1] - a[1])
   }, [expenses])
+
+  const foreignCurrencies = useMemo(
+    () => [...new Set(expenses.map((e) => e.currency.toUpperCase()).filter((c) => c !== (trip?.budgetCurrency ?? '').toUpperCase()))],
+    [expenses, trip?.budgetCurrency]
+  )
+  const fxRates = useQuery({
+    queryKey: ['fx-rates', trip?.budgetCurrency, foreignCurrencies],
+    queryFn: async () => {
+      const rates: Record<string, number> = {}
+      for (const c of foreignCurrencies) rates[c] = await FxApi.getRate(c, trip!.budgetCurrency!)
+      return rates
+    },
+    enabled: !!trip?.budgetCurrency && foreignCurrencies.length > 0,
+  })
+  const convertedExpenseTotal = useMemo(() => {
+    if (!trip?.budgetCurrency) return null
+    return expenses.reduce((sum, e) => {
+      const cur = e.currency.toUpperCase()
+      if (cur === trip.budgetCurrency!.toUpperCase()) return sum + e.amount
+      const rate = fxRates.data?.[cur]
+      return rate ? sum + e.amount * rate : sum
+    }, 0)
+  }, [expenses, trip?.budgetCurrency, fxRates.data])
+
+  const settlements = useMemo(() => {
+    if (companions.length === 0) return []
+    const net = new Map<string, number>()
+    for (const c of companions) net.set(c.id, 0)
+    net.set('owner', 0)
+    for (const e of expenses) {
+      const participants = e.splitCompanionIds.length > 0 ? e.splitCompanionIds : null
+      if (!participants) continue
+      const share = e.amount / participants.length
+      const payer = e.paidByCompanionId ?? 'owner'
+      net.set(payer, (net.get(payer) ?? 0) + e.amount)
+      for (const p of participants) net.set(p, (net.get(p) ?? 0) - share)
+    }
+    const nameOf = (cid: string) => (cid === 'owner' ? 'You' : companions.find((c) => c.id === cid)?.name ?? '?')
+    const debtors = [...net.entries()].filter(([, v]) => v < -0.01).sort((a, b) => a[1] - b[1])
+    const creditors = [...net.entries()].filter(([, v]) => v > 0.01).sort((a, b) => b[1] - a[1])
+    const results: { from: string; to: string; amount: number }[] = []
+    let di = 0, ci = 0
+    const debtorsCopy = debtors.map(([k, v]) => ({ k, v: -v }))
+    const creditorsCopy = creditors.map(([k, v]) => ({ k, v }))
+    while (di < debtorsCopy.length && ci < creditorsCopy.length) {
+      const amount = Math.min(debtorsCopy[di].v, creditorsCopy[ci].v)
+      if (amount > 0.01) results.push({ from: nameOf(debtorsCopy[di].k), to: nameOf(creditorsCopy[ci].k), amount })
+      debtorsCopy[di].v -= amount
+      creditorsCopy[ci].v -= amount
+      if (debtorsCopy[di].v < 0.01) di++
+      if (creditorsCopy[ci].v < 0.01) ci++
+    }
+    return results
+  }, [companions, expenses])
+
+  const firstStop = sortedStops[0]
+  const weather = useQuery({
+    queryKey: ['weather', firstStop?.lat, firstStop?.lng],
+    queryFn: () => fetchWeather(firstStop!.lat, firstStop!.lng),
+    enabled: !!firstStop,
+    staleTime: 30 * 60_000,
+  })
 
   if (!trip) return null
 
@@ -326,6 +497,45 @@ export function TripDetailPage() {
           <Button variant={tripMode ? 'default' : 'outline'} onClick={() => setTripMode((m) => !m)}>
             {tripMode ? 'On the trip ✓' : 'On the trip?'}
           </Button>
+          <Button variant="outline" size="icon" asChild>
+            <a href={TripsApi.calendarUrl(id)} download title="Add bookings to calendar (.ics)"><Download className="h-4 w-4" /></a>
+          </Button>
+          <Dialog open={emergencyOpen} onOpenChange={(o) => { setEmergencyOpen(o); if (o) setEmergencyText(trip.emergencyInfo ?? '') }}>
+            <Button variant="outline" size="icon" onClick={() => setEmergencyOpen(true)} title="Emergency info"><ShieldAlert className="h-4 w-4" /></Button>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Emergency info</DialogTitle></DialogHeader>
+              <div className="flex flex-col gap-2">
+                <Label>Embassy contacts, emergency numbers, medical notes, etc.</Label>
+                <Textarea value={emergencyText} onChange={(e) => setEmergencyText(e.target.value)} rows={6} placeholder="E.g. Local emergency: 112. US Embassy: +1 555 0100. Allergic to penicillin." />
+              </div>
+              <DialogFooter><Button onClick={() => saveEmergencyInfo.mutate()}>Save</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+            <Button variant="outline" size="icon" onClick={() => setShareOpen(true)} title="Share trip"><Share2 className="h-4 w-4" /></Button>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Share trip</DialogTitle></DialogHeader>
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">Anyone with this link gets a read-only view of stops, bookings and journal entries. No login required, and costs are never shown.</p>
+                {trip.shareSlug ? (
+                  <>
+                    <div className="flex gap-2">
+                      <Input readOnly value={`${window.location.origin}/share/${trip.shareSlug}`} />
+                      <Button
+                        variant="outline"
+                        onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/share/${trip.shareSlug}`); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+                      >
+                        {copied ? 'Copied!' : <Copy className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <Button variant="outline" onClick={() => revokeShareLink.mutate()}>Stop sharing</Button>
+                  </>
+                ) : (
+                  <Button onClick={() => createShareLink.mutate()}>Create share link</Button>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
           <Dialog open={tripEditOpen} onOpenChange={(o) => { setTripEditOpen(o); if (o) setTripForm({ name: trip.name, description: trip.description ?? '', startDate: trip.startDate ?? '', endDate: trip.endDate ?? '', status: String(trip.status), budget: trip.budget != null ? String(trip.budget) : '', budgetCurrency: trip.budgetCurrency ?? 'USD' }) }}>
             <Button variant="outline" size="icon" onClick={() => setTripEditOpen(true)}><Pencil className="h-4 w-4" /></Button>
             <DialogContent>
@@ -368,6 +578,7 @@ export function TripDetailPage() {
               <TabsTrigger value="stops">Stops</TabsTrigger>
               <TabsTrigger value="bookings">Bookings</TabsTrigger>
               <TabsTrigger value="budget">Budget</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
             </>
           )}
           <TabsTrigger value="packing">Packing</TabsTrigger>
@@ -376,6 +587,22 @@ export function TripDetailPage() {
 
         <TabsContent value="itinerary">
           <div className="flex flex-col gap-2">
+            {firstStop && weather.data && weather.data.length > 0 && (
+              <Card>
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-1.5 font-medium mb-2 text-sm"><Cloud className="h-4 w-4 text-muted-foreground" /> Weather near {firstStop.name}</div>
+                  <div className="flex gap-3 overflow-x-auto">
+                    {weather.data.slice(0, 7).map((d) => (
+                      <div key={d.date} className="flex flex-col items-center text-xs shrink-0 min-w-[3.5rem]">
+                        <div className="text-muted-foreground">{new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short' })}</div>
+                        <div className="mt-1">{Math.round(d.max)}° / {Math.round(d.min)}°</div>
+                        <div className="text-muted-foreground text-[10px] mt-0.5 text-center">{WEATHER_CODE_LABEL[d.code] ?? ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             {dayPlan.length === 0 && (
               <p className="text-sm text-muted-foreground">Add dates to stops or bookings (or set trip start/end dates) to see a day-by-day itinerary.</p>
             )}
@@ -526,9 +753,25 @@ export function TripDetailPage() {
                   <Card key={b.id}>
                     <CardContent className="flex items-center justify-between p-3">
                       <div>
-                        <div className="font-medium">{BOOKING_LABEL[b.type]} · {b.title}</div>
+                        <div className="font-medium flex items-center gap-2">
+                          {BOOKING_LABEL[b.type]} · {b.title}
+                          {b.type === BookingType.Flight && b.startAt && isCheckInSoon(b.startAt) && (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs"><Clock className="h-3 w-3" /> Check-in opens soon</span>
+                          )}
+                        </div>
                         <div className="text-sm text-muted-foreground">{b.startAt} → {b.endAt}</div>
-                        {b.confirmationNumber && <div className="text-sm">Conf# {b.confirmationNumber}</div>}
+                        {b.confirmationNumber && (
+                          <div className="text-sm flex items-center gap-1">
+                            Conf# {b.confirmationNumber}
+                            <button
+                              className="p-1 -m-1"
+                              onClick={() => { navigator.clipboard.writeText(b.confirmationNumber!); setCopiedConfId(b.id); setTimeout(() => setCopiedConfId(null), 1200) }}
+                            >
+                              <Copy className="h-3 w-3 text-muted-foreground" />
+                            </button>
+                            {copiedConfId === b.id && <span className="text-xs text-muted-foreground">Copied!</span>}
+                          </div>
+                        )}
                         {b.cost != null && <div className="text-sm">Cost: ${b.cost.toFixed(2)}</div>}
                         {Object.entries(details).filter(([, v]) => v).map(([k, v]) => (
                           <div key={k} className="text-sm mt-0.5"><span className="text-muted-foreground">{k}:</span> {v}</div>
@@ -558,6 +801,9 @@ export function TripDetailPage() {
                     {trip.budget != null && (
                       <div className="text-sm text-muted-foreground">of {trip.budget.toFixed(2)} {trip.budgetCurrency} budget</div>
                     )}
+                    {convertedExpenseTotal != null && foreignCurrencies.length > 0 && (
+                      <div className="text-sm text-muted-foreground">≈ {convertedExpenseTotal.toFixed(2)} {trip.budgetCurrency} total</div>
+                    )}
                   </div>
                 </div>
                 {trip.budget != null && trip.budget > 0 && (
@@ -575,6 +821,36 @@ export function TripDetailPage() {
                         <span className="text-muted-foreground">{EXPENSE_CATEGORY_LABEL[cat]}</span>
                         <span>{amount.toFixed(2)}</span>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold flex items-center gap-1.5"><Users className="h-4 w-4" /> Companions</h2>
+                </div>
+                <div className="flex gap-2">
+                  <Input value={companionName} onChange={(e) => setCompanionName(e.target.value)} placeholder="Add a travel companion..." />
+                  <Button onClick={() => addCompanion.mutate()} disabled={!companionName}>Add</Button>
+                </div>
+                {companions.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {companions.map((c) => (
+                      <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-sm">
+                        {c.name}
+                        <button onClick={() => removeCompanion.mutate(c.id)}><Trash2 className="h-3 w-3 text-muted-foreground" /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {settlements.length > 0 && (
+                  <div className="flex flex-col gap-1 mt-1 text-sm">
+                    <div className="font-medium">Who owes whom</div>
+                    {settlements.map((s, i) => (
+                      <div key={i} className="text-muted-foreground">{s.from} owes {s.to} {s.amount.toFixed(2)} {trip.budgetCurrency ?? ''}</div>
                     ))}
                   </div>
                 )}
@@ -603,6 +879,39 @@ export function TripDetailPage() {
                     </div>
                     <div><Label>Date</Label><Input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} /></div>
                     <div><Label>Note</Label><Textarea value={expenseForm.note} onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })} /></div>
+                    {companions.length > 0 && (
+                      <>
+                        <div>
+                          <Label>Paid by</Label>
+                          <Select value={expenseForm.paidByCompanionId || 'owner'} onValueChange={(v) => setExpenseForm({ ...expenseForm, paidByCompanionId: v === 'owner' ? '' : v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="owner">You</SelectItem>
+                              {companions.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Split with</Label>
+                          <div className="flex flex-col gap-1.5 mt-1">
+                            {companions.map((c) => (
+                              <label key={c.id} className="flex items-center gap-2 text-sm">
+                                <Checkbox
+                                  checked={expenseForm.splitCompanionIds.includes(c.id)}
+                                  onCheckedChange={(checked) => setExpenseForm({
+                                    ...expenseForm,
+                                    splitCompanionIds: checked
+                                      ? [...expenseForm.splitCompanionIds, c.id]
+                                      : expenseForm.splitCompanionIds.filter((x) => x !== c.id),
+                                  })}
+                                />
+                                {c.name}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <DialogFooter><Button onClick={() => saveExpense.mutate()} disabled={!expenseForm.amount || !expenseForm.date}>{editingExpenseId ? 'Save' : 'Add'}</Button></DialogFooter>
                 </DialogContent>
@@ -629,12 +938,83 @@ export function TripDetailPage() {
           </div>
         </TabsContent>
 
+        <TabsContent value="documents">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Documents</h2>
+              <Dialog open={documentOpen} onOpenChange={(o) => (o ? setDocumentOpen(true) : closeDocumentDialog())}>
+                <DialogTrigger asChild><Button size="sm" onClick={() => { setEditingDocumentId(null); setDocumentForm(EMPTY_DOCUMENT_FORM) }}><Plus className="h-4 w-4" /> Add document</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>{editingDocumentId ? 'Edit document' : 'Add document'}</DialogTitle></DialogHeader>
+                  <div className="flex flex-col gap-3">
+                    <div><Label>Title</Label><Input value={documentForm.title} onChange={(e) => setDocumentForm({ ...documentForm, title: e.target.value })} placeholder="Passport, Travel insurance..." /></div>
+                    <div>
+                      <Label>Type</Label>
+                      <Select value={documentForm.docType} onValueChange={(v) => setDocumentForm({ ...documentForm, docType: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(DOCUMENT_TYPE_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div><Label>Expiry date</Label><Input type="date" value={documentForm.expiryDate} onChange={(e) => setDocumentForm({ ...documentForm, expiryDate: e.target.value })} /></div>
+                    <div><Label>URL (link to scan/copy)</Label><Input value={documentForm.url} onChange={(e) => setDocumentForm({ ...documentForm, url: e.target.value })} /></div>
+                    <div><Label>Notes</Label><Textarea value={documentForm.notes} onChange={(e) => setDocumentForm({ ...documentForm, notes: e.target.value })} /></div>
+                  </div>
+                  <DialogFooter><Button onClick={() => saveDocument.mutate()} disabled={!documentForm.title}>{editingDocumentId ? 'Save' : 'Add'}</Button></DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <div className="flex flex-col gap-2">
+              {documents.map((d) => {
+                const daysLeft = d.expiryDate ? Math.ceil((new Date(d.expiryDate).getTime() - Date.now()) / 86_400_000) : null
+                return (
+                  <Card key={d.id}>
+                    <CardContent className="flex items-center justify-between p-3">
+                      <div>
+                        <div className="font-medium flex items-center gap-1.5"><FileText className="h-4 w-4 text-muted-foreground" /> {d.title} <span className="text-xs text-muted-foreground">({DOCUMENT_TYPE_LABEL[d.docType]})</span></div>
+                        {d.expiryDate && (
+                          <div className={cn('text-sm', daysLeft != null && daysLeft <= 90 && 'text-destructive')}>
+                            Expires {d.expiryDate}{daysLeft != null && daysLeft >= 0 && ` (in ${daysLeft} days)`}{daysLeft != null && daysLeft < 0 && ' — expired'}
+                          </div>
+                        )}
+                        {d.url && <a href={d.url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">View document</a>}
+                        {d.notes && <p className="text-sm mt-1">{d.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button className="p-1.5 -m-1.5" onClick={() => startEditDocument(d)}><Pencil className="h-4 w-4 text-muted-foreground" /></button>
+                        <button className="p-1.5 -m-1.5" onClick={() => removeDocument.mutate(d.id)}><Trash2 className="h-4 w-4 text-muted-foreground" /></button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+              {documents.length === 0 && <p className="text-sm text-muted-foreground">No documents yet.</p>}
+            </div>
+          </div>
+        </TabsContent>
+
         <TabsContent value="packing">
           <Card>
             <CardContent className="p-4 flex flex-col gap-3">
               <div className="flex gap-2">
                 <Input value={packingName} onChange={(e) => setPackingName(e.target.value)} placeholder="Add a packing item..." />
                 <Button onClick={() => addPackingItem.mutate()} disabled={!packingName}>Add</Button>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs text-muted-foreground">Quick-add a template</Label>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(PACKING_TEMPLATES).map(([name, items]) => (
+                    <Button
+                      key={name}
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => { for (const item of items) await TripsApi.addPackingItem(id, item); qc.invalidateQueries({ queryKey: ['trip', id, 'packing'] }) }}
+                    >
+                      {name}
+                    </Button>
+                  ))}
+                </div>
               </div>
               <div className="flex flex-col gap-2">
                 {packingItems.map((p) => (

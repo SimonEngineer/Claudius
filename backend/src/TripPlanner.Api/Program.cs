@@ -9,6 +9,7 @@ builder.Services.AddControllers().AddJsonOptions(o =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHttpClient();
 
 builder.Services.AddDbContext<TripPlannerDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));

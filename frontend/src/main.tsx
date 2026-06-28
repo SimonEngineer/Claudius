@@ -8,7 +8,7 @@ import App from './App.tsx'
 import { ToastProvider } from '@/components/ui/toast'
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+  defaultOptions: { queries: { staleTime: 30_000, retry: 1 }, mutations: { retry: 2, retryDelay: 1000 } },
 })
 
 createRoot(document.getElementById('root')!).render(

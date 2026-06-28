@@ -10,11 +10,13 @@ const GoalDetailPage = lazy(() => import('@/pages/GoalDetailPage').then((m) => (
 const TripsPage = lazy(() => import('@/pages/TripsPage').then((m) => ({ default: m.TripsPage })))
 const TripDetailPage = lazy(() => import('@/pages/TripDetailPage').then((m) => ({ default: m.TripDetailPage })))
 const TagsPage = lazy(() => import('@/pages/TagsPage').then((m) => ({ default: m.TagsPage })))
+const PublicTripPage = lazy(() => import('@/pages/PublicTripPage').then((m) => ({ default: m.PublicTripPage })))
 
 export default function App() {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}>
       <Routes>
+        <Route path="/share/:slug" element={<PublicTripPage />} />
         <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/wishlist" element={<WishlistPage />} />

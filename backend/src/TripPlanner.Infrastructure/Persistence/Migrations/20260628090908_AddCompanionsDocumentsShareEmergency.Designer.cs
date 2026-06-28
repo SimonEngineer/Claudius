@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TripPlanner.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using TripPlanner.Infrastructure.Persistence;
 namespace TripPlanner.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TripPlannerDbContext))]
-    partial class TripPlannerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260628090908_AddCompanionsDocumentsShareEmergency")]
+    partial class AddCompanionsDocumentsShareEmergency
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

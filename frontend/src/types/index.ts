@@ -148,6 +148,8 @@ export interface Trip {
   status: number
   budget?: number | null
   budgetCurrency?: string | null
+  shareSlug?: string | null
+  emergencyInfo?: string | null
   tags: Tag[]
 }
 
@@ -215,4 +217,34 @@ export interface Expense {
   date: string
   note?: string | null
   bookingId?: string | null
+  paidByCompanionId?: string | null
+  splitCompanionIds: string[]
+}
+
+export interface TripCompanion {
+  id: string
+  name: string
+}
+
+export const DocumentType = { Passport: 1, Visa: 2, Insurance: 3, BookingConfirmation: 4, Other: 5 } as const
+export type DocumentTypeValue = (typeof DocumentType)[keyof typeof DocumentType]
+
+export interface TravelDocument {
+  id: string
+  title: string
+  docType: number
+  expiryDate?: string | null
+  url?: string | null
+  notes?: string | null
+}
+
+export interface PublicTrip {
+  name: string
+  description?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  status: number
+  stops: TripStop[]
+  bookings: Booking[]
+  timeline: TimelineEntry[]
 }

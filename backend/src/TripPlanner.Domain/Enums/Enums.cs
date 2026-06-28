@@ -73,3 +73,12 @@ public enum WishlistStatus
     Booked = 3,
     Visited = 4,
 }
+
+public enum DocumentType
+{
+    Passport = 1,
+    Visa = 2,
+    Insurance = 3,
+    BookingConfirmation = 4,
+    Other = 5,
+}

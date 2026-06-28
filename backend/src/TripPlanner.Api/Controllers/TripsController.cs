@@ -53,6 +53,135 @@ public class TripsController : ControllerBase
         return ToDto(trip, tags);
     }
 
+    [HttpPost("{id:guid}/share")]
+    public async Task<ActionResult<TripDto>> CreateShareLink(Guid id)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        trip.ShareSlug ??= Guid.NewGuid().ToString("N");
+        await _db.SaveChangesAsync();
+        var tags = await TagHelper.GetTagsForAsync(_db, EntityType.Trip, id);
+        return ToDto(trip, tags);
+    }
+
+    [HttpDelete("{id:guid}/share")]
+    public async Task<ActionResult<TripDto>> RevokeShareLink(Guid id)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        trip.ShareSlug = null;
+        await _db.SaveChangesAsync();
+        var tags = await TagHelper.GetTagsForAsync(_db, EntityType.Trip, id);
+        return ToDto(trip, tags);
+    }
+
+    [HttpPut("{id:guid}/emergency-info")]
+    public async Task<ActionResult<TripDto>> UpdateEmergencyInfo(Guid id, EmergencyInfoUpdateDto dto)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        trip.EmergencyInfo = dto.EmergencyInfo;
+        await _db.SaveChangesAsync();
+        var tags = await TagHelper.GetTagsForAsync(_db, EntityType.Trip, id);
+        return ToDto(trip, tags);
+    }
+
+    [HttpGet("{id:guid}/calendar.ics")]
+    public async Task<IActionResult> GetCalendar(Guid id)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        var bookings = await _db.Bookings.Where(b => b.TripId == id).ToListAsync();
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("BEGIN:VCALENDAR");
+        sb.AppendLine("VERSION:2.0");
+        sb.AppendLine("PRODID:-//TripPlanner//Calendar//EN");
+        foreach (var b in bookings)
+        {
+            var start = b.StartAt ?? DateTime.UtcNow;
+            var end = b.EndAt ?? start.AddHours(1);
+            sb.AppendLine("BEGIN:VEVENT");
+            sb.AppendLine($"UID:{b.Id}@tripplanner");
+            sb.AppendLine($"DTSTART:{start:yyyyMMddTHHmmssZ}");
+            sb.AppendLine($"DTEND:{end:yyyyMMddTHHmmssZ}");
+            sb.AppendLine($"SUMMARY:{IcsEscape(b.Title)}");
+            if (!string.IsNullOrWhiteSpace(b.ConfirmationNumber))
+                sb.AppendLine($"DESCRIPTION:{IcsEscape("Confirmation: " + b.ConfirmationNumber)}");
+            sb.AppendLine("END:VEVENT");
+        }
+        sb.AppendLine("END:VCALENDAR");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/calendar", $"{trip.Name}.ics");
+    }
+
+    private static string IcsEscape(string s) => s.Replace(",", "\\,").Replace(";", "\\;");
+
+    // Companions
+    [HttpGet("{id:guid}/companions")]
+    public async Task<ActionResult<List<TripCompanionDto>>> GetCompanions(Guid id)
+        => await _db.TripCompanions.Where(c => c.TripId == id).OrderBy(c => c.CreatedAt)
+            .Select(c => new TripCompanionDto(c.Id, c.Name)).ToListAsync();
+
+    [HttpPost("{id:guid}/companions")]
+    public async Task<ActionResult<TripCompanionDto>> AddCompanion(Guid id, TripCompanionCreateDto dto)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        var companion = new TripCompanion { TripId = id, Name = dto.Name };
+        _db.TripCompanions.Add(companion);
+        await _db.SaveChangesAsync();
+        return new TripCompanionDto(companion.Id, companion.Name);
+    }
+
+    [HttpDelete("companions/{companionId:guid}")]
+    public async Task<IActionResult> DeleteCompanion(Guid companionId)
+    {
+        var companion = await _db.TripCompanions.FindAsync(companionId);
+        if (companion == null) return NotFound();
+        _db.TripCompanions.Remove(companion);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Documents
+    [HttpGet("{id:guid}/documents")]
+    public async Task<ActionResult<List<TravelDocumentDto>>> GetDocuments(Guid id)
+        => await _db.TravelDocuments.Where(d => d.TripId == id).OrderBy(d => d.ExpiryDate)
+            .Select(d => new TravelDocumentDto(d.Id, d.Title, d.DocType, d.ExpiryDate, d.Url, d.Notes)).ToListAsync();
+
+    [HttpPost("{id:guid}/documents")]
+    public async Task<ActionResult<TravelDocumentDto>> AddDocument(Guid id, TravelDocumentCreateDto dto)
+    {
+        var trip = await _db.Trips.FindAsync(id);
+        if (trip == null) return NotFound();
+        var doc = new TravelDocument { TripId = id, Title = dto.Title, DocType = dto.DocType, ExpiryDate = dto.ExpiryDate, Url = dto.Url, Notes = dto.Notes };
+        _db.TravelDocuments.Add(doc);
+        await _db.SaveChangesAsync();
+        return new TravelDocumentDto(doc.Id, doc.Title, doc.DocType, doc.ExpiryDate, doc.Url, doc.Notes);
+    }
+
+    [HttpPut("documents/{documentId:guid}")]
+    public async Task<ActionResult<TravelDocumentDto>> UpdateDocument(Guid documentId, TravelDocumentCreateDto dto)
+    {
+        var doc = await _db.TravelDocuments.FindAsync(documentId);
+        if (doc == null) return NotFound();
+        doc.Title = dto.Title; doc.DocType = dto.DocType; doc.ExpiryDate = dto.ExpiryDate; doc.Url = dto.Url; doc.Notes = dto.Notes;
+        await _db.SaveChangesAsync();
+        return new TravelDocumentDto(doc.Id, doc.Title, doc.DocType, doc.ExpiryDate, doc.Url, doc.Notes);
+    }
+
+    [HttpDelete("documents/{documentId:guid}")]
+    public async Task<IActionResult> DeleteDocument(Guid documentId)
+    {
+        var doc = await _db.TravelDocuments.FindAsync(documentId);
+        if (doc == null) return NotFound();
+        _db.TravelDocuments.Remove(doc);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -243,8 +372,8 @@ public class TripsController : ControllerBase
     // Expenses
     [HttpGet("{id:guid}/expenses")]
     public async Task<ActionResult<List<ExpenseDto>>> GetExpenses(Guid id)
-        => await _db.Expenses.Where(e => e.TripId == id).OrderBy(e => e.Date)
-            .Select(e => new ExpenseDto(e.Id, e.Category, e.Amount, e.Currency, e.Date, e.Note, e.BookingId)).ToListAsync();
+        => (await _db.Expenses.Where(e => e.TripId == id).OrderBy(e => e.Date).ToListAsync())
+            .Select(ToExpenseDto).ToList();
 
     [HttpPost("{id:guid}/expenses")]
     public async Task<ActionResult<ExpenseDto>> AddExpense(Guid id, ExpenseCreateDto dto)
@@ -254,11 +383,12 @@ public class TripsController : ControllerBase
         var expense = new Expense
         {
             TripId = id, Category = dto.Category, Amount = dto.Amount, Currency = dto.Currency,
-            Date = dto.Date, Note = dto.Note, BookingId = dto.BookingId,
+            Date = dto.Date, Note = dto.Note, BookingId = dto.BookingId, PaidByCompanionId = dto.PaidByCompanionId,
+            SplitCompanionIds = JoinIds(dto.SplitCompanionIds),
         };
         _db.Expenses.Add(expense);
         await _db.SaveChangesAsync();
-        return new ExpenseDto(expense.Id, expense.Category, expense.Amount, expense.Currency, expense.Date, expense.Note, expense.BookingId);
+        return ToExpenseDto(expense);
     }
 
     [HttpPut("expenses/{expenseId:guid}")]
@@ -267,9 +397,10 @@ public class TripsController : ControllerBase
         var expense = await _db.Expenses.FindAsync(expenseId);
         if (expense == null) return NotFound();
         expense.Category = dto.Category; expense.Amount = dto.Amount; expense.Currency = dto.Currency;
-        expense.Date = dto.Date; expense.Note = dto.Note; expense.BookingId = dto.BookingId;
+        expense.Date = dto.Date; expense.Note = dto.Note; expense.BookingId = dto.BookingId; expense.PaidByCompanionId = dto.PaidByCompanionId;
+        expense.SplitCompanionIds = JoinIds(dto.SplitCompanionIds);
         await _db.SaveChangesAsync();
-        return new ExpenseDto(expense.Id, expense.Category, expense.Amount, expense.Currency, expense.Date, expense.Note, expense.BookingId);
+        return ToExpenseDto(expense);
     }
 
     [HttpDelete("expenses/{expenseId:guid}")]
@@ -283,5 +414,14 @@ public class TripsController : ControllerBase
     }
 
     private static TripDto ToDto(Trip t, List<TagDto> tags) =>
-        new(t.Id, t.Name, t.Description, t.StartDate, t.EndDate, t.Status, t.Budget, t.BudgetCurrency, tags);
+        new(t.Id, t.Name, t.Description, t.StartDate, t.EndDate, t.Status, t.Budget, t.BudgetCurrency, t.ShareSlug, t.EmergencyInfo, tags);
+
+    private static ExpenseDto ToExpenseDto(Expense e) =>
+        new(e.Id, e.Category, e.Amount, e.Currency, e.Date, e.Note, e.BookingId, e.PaidByCompanionId, SplitIds(e.SplitCompanionIds));
+
+    private static string? JoinIds(List<Guid>? ids) => ids == null || ids.Count == 0 ? null : string.Join(',', ids);
+
+    private static List<Guid> SplitIds(string? csv) => string.IsNullOrWhiteSpace(csv)
+        ? new List<Guid>()
+        : csv.Split(',').Select(Guid.Parse).ToList();
 }

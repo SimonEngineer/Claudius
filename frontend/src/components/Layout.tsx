@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutDashboard, MapPinned, Target, Plane, Tags } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QuickCapture } from '@/components/QuickCapture'
+import { OfflineBanner } from '@/components/OfflineBanner'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -13,7 +14,9 @@ const navItems = [
 
 export function Layout() {
   return (
-    <div className="flex min-h-svh w-full">
+    <div className="flex min-h-svh w-full flex-col">
+      <OfflineBanner />
+    <div className="flex flex-1 w-full">
       <aside className="hidden md:flex w-56 shrink-0 flex-col border-r bg-card p-4 gap-1">
         <div className="px-2 pb-4 text-lg font-bold">Wanderlist</div>
         {navItems.map((item) => (
@@ -58,6 +61,7 @@ export function Layout() {
       </nav>
 
       <QuickCapture />
+    </div>
     </div>
   )
 }

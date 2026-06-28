@@ -11,12 +11,24 @@ public class Trip : EntityBase
     public TripStatus Status { get; set; } = TripStatus.Planning;
     public decimal? Budget { get; set; }
     public string? BudgetCurrency { get; set; }
+    /// <summary>Opaque slug enabling unauthenticated read-only access to this trip; null until first shared.</summary>
+    public string? ShareSlug { get; set; }
+    public string? EmergencyInfo { get; set; }
 
     public ICollection<TripStop> Stops { get; set; } = new List<TripStop>();
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
     public ICollection<TimelineEntry> Timeline { get; set; } = new List<TimelineEntry>();
     public ICollection<PackingItem> PackingItems { get; set; } = new List<PackingItem>();
     public ICollection<Expense> Expenses { get; set; } = new List<Expense>();
+    public ICollection<TripCompanion> Companions { get; set; } = new List<TripCompanion>();
+    public ICollection<TravelDocument> Documents { get; set; } = new List<TravelDocument>();
+}
+
+public class TripCompanion : EntityBase
+{
+    public Guid TripId { get; set; }
+    public Trip Trip { get; set; } = null!;
+    public string Name { get; set; } = string.Empty;
 }
 
 public class TripStop : EntityBase
@@ -82,4 +94,19 @@ public class Expense : EntityBase
     public DateOnly Date { get; set; }
     public string? Note { get; set; }
     public Guid? BookingId { get; set; }
+    /// <summary>Companion who fronted the cost, if any (null means trip owner paid).</summary>
+    public Guid? PaidByCompanionId { get; set; }
+    /// <summary>Comma-separated TripCompanion ids this expense is split across; empty/null means not split.</summary>
+    public string? SplitCompanionIds { get; set; }
+}
+
+public class TravelDocument : EntityBase
+{
+    public Guid TripId { get; set; }
+    public Trip Trip { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
+    public DocumentType DocType { get; set; }
+    public DateOnly? ExpiryDate { get; set; }
+    public string? Url { get; set; }
+    public string? Notes { get; set; }
 }
