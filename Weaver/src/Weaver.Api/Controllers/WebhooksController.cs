@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Infrastructure.Security;
 using Weaver.Workflows;
 
 namespace Weaver.Api.Controllers;
@@ -16,11 +17,13 @@ public class WebhooksController : ControllerBase
 {
     private readonly WeaverDbContext _db;
     private readonly IWorkflowExecutionEngine _engine;
+    private readonly ISensitiveConfigProtector _protector;
 
-    public WebhooksController(WeaverDbContext db, IWorkflowExecutionEngine engine)
+    public WebhooksController(WeaverDbContext db, IWorkflowExecutionEngine engine, ISensitiveConfigProtector protector)
     {
         _db = db;
         _engine = engine;
+        _protector = protector;
     }
 
     [HttpPost("{workflowId:guid}/{nodeId:guid}")]
@@ -38,7 +41,8 @@ public class WebhooksController : ControllerBase
             return NotFound();
         }
 
-        var config = string.IsNullOrWhiteSpace(node.ConfigJson) ? null : JsonNode.Parse(node.ConfigJson);
+        var decryptedConfigJson = string.IsNullOrWhiteSpace(node.ConfigJson) ? null : _protector.DecryptForUse(node.Type, node.ConfigJson);
+        var config = decryptedConfigJson is null ? null : JsonNode.Parse(decryptedConfigJson);
         var expectedSecret = config?["secret"]?.GetValue<string>();
         if (!string.IsNullOrEmpty(expectedSecret))
         {

@@ -24,6 +24,7 @@ public class ScraperEngine
     public async Task<ScrapeResult> RunAsync(ScrapingProject project, CancellationToken cancellationToken = default)
     {
         var fetcher = _fetcherFactory.GetFetcher(project.RenderMode);
+        var customHeaders = CustomHeadersParser.Parse(project.CustomHeadersJson);
         var items = new List<ExtractedItem>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var currentUrl = project.StartUrl;
@@ -44,7 +45,7 @@ public class ScraperEngine
             FetchedPage fetched;
             try
             {
-                fetched = await fetcher.FetchAsync(currentUrl, cancellationToken);
+                fetched = await fetcher.FetchAsync(currentUrl, customHeaders, cancellationToken);
             }
             catch (Exception ex)
             {

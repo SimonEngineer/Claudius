@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Scraping;
 using Weaver.Scraping.Proxy;
 
 namespace Weaver.Api.Controllers;
@@ -38,7 +39,21 @@ public class ProxyController : ControllerBase
             ? await _db.RateLimitPolicies.AsNoTracking().FirstOrDefaultAsync(p => p.Id == rateLimitPolicyId && p.OwnerUserId == userId, ct)
             : null;
 
-        var page = await _proxyService.LoadForPickingAsync(url, policy, scrapingProjectId ?? Guid.Empty, renderMode, ct);
+        // Only a previously-saved project's own headers are available here (there's no request
+        // body on a GET the iframe can load from); a brand-new, not-yet-saved project previews
+        // without them until the first save.
+        Dictionary<string, string>? customHeaders = null;
+        if (scrapingProjectId is not null)
+        {
+            var project = await _db.ScrapingProjects.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == scrapingProjectId && p.OwnerUserId == userId, ct);
+            if (project is not null)
+            {
+                customHeaders = CustomHeadersParser.Parse(project.CustomHeadersJson);
+            }
+        }
+
+        var page = await _proxyService.LoadForPickingAsync(url, policy, scrapingProjectId ?? Guid.Empty, renderMode, customHeaders, ct);
         return Content(page.Html, "text/html");
     }
 }

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace Weaver.Workflows.Nodes;
 
@@ -27,7 +28,20 @@ public class ConditionNode : INodeHandler
 
         var actual = JsonPathHelper.ResolveWithContext(context.Input, context.AllNodeOutputs, field);
         var actualString = JsonPathHelper.ResolveAsStringWithContext(context.Input, context.AllNodeOutputs, field);
-        var matched = Evaluate(op, actual, actualString, compareValue);
+
+        bool matched;
+        try
+        {
+            matched = Evaluate(op, actual, actualString, compareValue);
+        }
+        catch (ArgumentException ex)
+        {
+            return Task.FromResult(NodeExecutionResult.Fail($"Condition node's regex is invalid: {ex.Message}"));
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return Task.FromResult(NodeExecutionResult.Fail("Condition node's regex took too long to evaluate (possible catastrophic backtracking)."));
+        }
 
         context.Log($"condition: {field} {op} {compareValue} -> actual={actualString ?? "<null>"} -> {matched}");
         return Task.FromResult(NodeExecutionResult.Ok(context.Input, matched ? "true" : "false"));
@@ -43,6 +57,9 @@ public class ConditionNode : INodeHandler
                 return actual is null;
             case "contains":
                 return actualString is not null && compareValue is not null && actualString.Contains(compareValue, StringComparison.OrdinalIgnoreCase);
+            case "matchesRegex":
+                return actualString is not null && compareValue is not null
+                    && Regex.IsMatch(actualString, compareValue, RegexOptions.None, TimeSpan.FromMilliseconds(500));
             case "notEquals":
                 return !string.Equals(actualString, compareValue, StringComparison.OrdinalIgnoreCase);
             case "greaterThan":

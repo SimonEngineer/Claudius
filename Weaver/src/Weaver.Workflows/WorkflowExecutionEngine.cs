@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Infrastructure.Security;
 
 namespace Weaver.Workflows;
 
@@ -154,7 +155,7 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
 
                 var input = isTriggerEntry ? triggerPayload : MergeContributions(node, contributions);
 
-                var result = await ExecuteWithRetryAsync(node, input);
+                var result = await ExecuteWithRetryAsync(node, input, isTriggerEntry);
                 _resolvedNodeIds.Add(node.Id);
                 if (result.Success)
                 {
@@ -187,7 +188,7 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
             return merged;
         }
 
-        private async Task<NodeExecutionResult> ExecuteWithRetryAsync(WorkflowNode node, JsonNode? input)
+        private async Task<NodeExecutionResult> ExecuteWithRetryAsync(WorkflowNode node, JsonNode? input, bool isTriggerEntry)
         {
             var nodeRun = new NodeRun
             {
@@ -203,6 +204,17 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
 
             var logLines = new List<string>();
             NodeExecutionResult result;
+
+            if (!isTriggerEntry && node.IsDisabled)
+            {
+                // Disabled nodes aren't executed at all -- their input passes straight through as
+                // if this node weren't in the graph, and it's neither a success nor a failure.
+                nodeRun.Status = RunStatus.Skipped;
+                nodeRun.OutputJson = input?.ToJsonString();
+                nodeRun.CompletedAt = DateTimeOffset.UtcNow;
+                await _db.SaveChangesAsync(_cancellationToken);
+                return NodeExecutionResult.Ok(input);
+            }
 
             if (!_registry.TryResolve(node.Type, out var handler))
             {
@@ -224,7 +236,9 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
                     attempt++;
                     try
                     {
-                        var config = string.IsNullOrWhiteSpace(node.ConfigJson) ? null : JsonNode.Parse(node.ConfigJson);
+                        var protector = _services.GetRequiredService<ISensitiveConfigProtector>();
+                        var decryptedConfigJson = string.IsNullOrWhiteSpace(node.ConfigJson) ? null : protector.DecryptForUse(node.Type, node.ConfigJson);
+                        var config = decryptedConfigJson is null ? null : JsonNode.Parse(decryptedConfigJson);
                         var context = new NodeExecutionContext
                         {
                             WorkflowRunId = _run.Id,

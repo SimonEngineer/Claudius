@@ -34,12 +34,13 @@ public class PageProxyService
         RateLimitPolicy? policy = null,
         Guid scrapingProjectId = default,
         RenderMode renderMode = RenderMode.Http,
+        IReadOnlyDictionary<string, string>? customHeaders = null,
         CancellationToken cancellationToken = default)
     {
         await _rateLimitGate.WaitForSlotAsync(policy ?? RateLimitGate.DefaultInteractivePolicy, scrapingProjectId, new Uri(url), cancellationToken);
 
         var fetcher = _fetcherFactory.GetFetcher(renderMode);
-        var fetched = await fetcher.FetchAsync(url, cancellationToken);
+        var fetched = await fetcher.FetchAsync(url, customHeaders, cancellationToken);
 
         var config = Configuration.Default;
         using var context = BrowsingContext.New(config);

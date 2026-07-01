@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,6 +8,7 @@ using Weaver.Infrastructure.Auth;
 using Weaver.Infrastructure.Persistence;
 using Weaver.Infrastructure.Queue;
 using Weaver.Infrastructure.RateLimiting;
+using Weaver.Infrastructure.Security;
 
 namespace Weaver.Infrastructure;
 
@@ -24,11 +26,19 @@ public static class ServiceCollectionExtensions
             ?? configuration["WEAVER_REDIS_CONNECTION_STRING"]
             ?? "localhost:6379";
 
-        services.AddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect(redisConnectionString));
+        var redisConnection = ConnectionMultiplexer.Connect(redisConnectionString);
+        services.AddSingleton<IConnectionMultiplexer>(redisConnection);
 
         services.AddSingleton<IDistributedRateLimiter, RedisTokenBucketRateLimiter>();
         services.AddSingleton<IScrapeJobQueue, RedisStreamScrapeJobQueue>();
+
+        // Api and Worker both need to encrypt/decrypt the same node config fields, so the Data
+        // Protection key ring is persisted to Redis (shared infra both processes already connect
+        // to) under one fixed application name rather than each process's own local key storage.
+        services.AddDataProtection()
+            .SetApplicationName("Weaver")
+            .PersistKeysToStackExchangeRedis(redisConnection, "weaver:dataprotection-keys");
+        services.AddSingleton<ISensitiveConfigProtector, SensitiveConfigProtector>();
 
         services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
         var signingKey = configuration["Jwt:SigningKey"];
@@ -44,6 +54,10 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPasswordHashingService, PasswordHashingService>();
         services.AddScoped<ITokenService, TokenService>();
+
+        services.AddHealthChecks()
+            .AddCheck<PostgresHealthCheck>("postgres")
+            .AddCheck<RedisHealthCheck>("redis");
 
         return services;
     }

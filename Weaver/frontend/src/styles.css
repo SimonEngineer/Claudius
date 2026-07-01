@@ -130,6 +130,7 @@ tr:hover td { background: var(--panel-2); }
 .pill.Failed { background: rgba(239,68,68,0.15); color: var(--danger); }
 .pill.Running, .pill.Pending { background: rgba(245,158,11,0.15); color: var(--warn); }
 .pill.Cancelled { background: rgba(156,163,175,0.15); color: var(--text-dim); }
+.pill.Skipped { background: rgba(156,163,175,0.15); color: var(--text-dim); }
 
 .row { display: flex; gap: 12px; }
 .row > * { flex: 1; }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Domain;
 using Weaver.Infrastructure.Auth;
@@ -14,6 +15,7 @@ public record AuthResponse(string Token, Guid UserId, string Email);
 [ApiController]
 [Route("api/auth")]
 [AllowAnonymous]
+[EnableRateLimiting("auth")]
 public class AuthController : ControllerBase
 {
     private readonly WeaverDbContext _db;

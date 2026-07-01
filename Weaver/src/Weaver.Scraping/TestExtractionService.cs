@@ -32,6 +32,7 @@ public class TestExtractionService
         RateLimitPolicy? policy,
         Guid scrapingProjectId,
         RenderMode renderMode = RenderMode.Http,
+        IReadOnlyDictionary<string, string>? customHeaders = null,
         CancellationToken cancellationToken = default)
     {
         var targetUri = new Uri(url);
@@ -40,7 +41,7 @@ public class TestExtractionService
         Fetching.FetchedPage fetched;
         try
         {
-            fetched = await _fetcherFactory.GetFetcher(renderMode).FetchAsync(url, cancellationToken);
+            fetched = await _fetcherFactory.GetFetcher(renderMode).FetchAsync(url, customHeaders, cancellationToken);
         }
         catch (Exception ex)
         {

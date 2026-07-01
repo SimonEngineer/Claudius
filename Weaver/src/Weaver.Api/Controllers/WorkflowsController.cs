@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Weaver.Api.Dtos;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Infrastructure.Security;
 using Weaver.Workflows;
 
 namespace Weaver.Api.Controllers;
@@ -14,12 +15,14 @@ public class WorkflowsController : ControllerBase
     private readonly WeaverDbContext _db;
     private readonly IWorkflowExecutionEngine _engine;
     private readonly INodeHandlerRegistry _registry;
+    private readonly ISensitiveConfigProtector _protector;
 
-    public WorkflowsController(WeaverDbContext db, IWorkflowExecutionEngine engine, INodeHandlerRegistry registry)
+    public WorkflowsController(WeaverDbContext db, IWorkflowExecutionEngine engine, INodeHandlerRegistry registry, ISensitiveConfigProtector protector)
     {
         _db = db;
         _engine = engine;
         _registry = registry;
+        _protector = protector;
     }
 
     private Guid UserId => User.GetUserId();
@@ -30,14 +33,14 @@ public class WorkflowsController : ControllerBase
         var workflows = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges)
             .Where(w => w.OwnerUserId == UserId)
             .OrderByDescending(w => w.UpdatedAt).ToListAsync(ct);
-        return workflows.Select(WorkflowDto.FromEntity).ToList();
+        return workflows.Select(w => WorkflowDto.FromEntity(w, _protector)).ToList();
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<WorkflowDto>> Get(Guid id, CancellationToken ct)
     {
         var workflow = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges).FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
-        return workflow is null ? NotFound() : WorkflowDto.FromEntity(workflow);
+        return workflow is null ? NotFound() : WorkflowDto.FromEntity(workflow, _protector);
     }
 
     [HttpPost]
@@ -48,7 +51,7 @@ public class WorkflowsController : ControllerBase
 
         _db.Workflows.Add(workflow);
         await _db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(Get), new { id = workflow.Id }, WorkflowDto.FromEntity(workflow));
+        return CreatedAtAction(nameof(Get), new { id = workflow.Id }, WorkflowDto.FromEntity(workflow, _protector));
     }
 
     /// <summary>Full-graph replace: the workflow builder always saves nodes+edges together, matching how React Flow hands back its whole canvas state.</summary>
@@ -73,7 +76,7 @@ public class WorkflowsController : ControllerBase
         ApplyGraph(workflow, request);
 
         await _db.SaveChangesAsync(ct);
-        return WorkflowDto.FromEntity(workflow);
+        return WorkflowDto.FromEntity(workflow, _protector);
     }
 
     [HttpDelete("{id:guid}")]
@@ -88,6 +91,65 @@ public class WorkflowsController : ControllerBase
         _db.Workflows.Remove(workflow);
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Clones a workflow's whole graph under a new id. The clone is always created disabled --
+    /// otherwise duplicating a workflow with an active cron/webhook trigger would silently start
+    /// a second copy running on the same schedule the moment it's saved.
+    /// </summary>
+    [HttpPost("{id:guid}/duplicate")]
+    public async Task<ActionResult<WorkflowDto>> Duplicate(Guid id, CancellationToken ct)
+    {
+        var source = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges).FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
+        if (source is null)
+        {
+            return NotFound();
+        }
+
+        var copy = new Workflow
+        {
+            OwnerUserId = UserId,
+            Name = $"{source.Name} (Copy)",
+            Description = source.Description,
+            IsEnabled = false,
+        };
+
+        var idMap = new Dictionary<Guid, Guid>();
+        foreach (var n in source.Nodes)
+        {
+            var newId = Guid.NewGuid();
+            idMap[n.Id] = newId;
+            copy.Nodes.Add(new WorkflowNode
+            {
+                Id = newId,
+                WorkflowId = copy.Id,
+                Type = n.Type,
+                Name = n.Name,
+                ConfigJson = n.ConfigJson,
+                IsDisabled = n.IsDisabled,
+                MaxRetries = n.MaxRetries,
+                RetryDelayMs = n.RetryDelayMs,
+                PositionX = n.PositionX,
+                PositionY = n.PositionY,
+            });
+        }
+        foreach (var e in source.Edges)
+        {
+            copy.Edges.Add(new WorkflowEdge
+            {
+                Id = Guid.NewGuid(),
+                WorkflowId = copy.Id,
+                SourceNodeId = idMap[e.SourceNodeId],
+                SourceHandle = e.SourceHandle,
+                TargetNodeId = idMap[e.TargetNodeId],
+                TargetHandle = e.TargetHandle,
+            });
+        }
+
+        _db.Workflows.Add(copy);
+        await _db.SaveChangesAsync(ct);
+        return CreatedAtAction(nameof(Get), new { id = copy.Id }, WorkflowDto.FromEntity(copy, _protector));
     }
 
     /// <summary>Manually fires a specific trigger node -- the workflow builder's "Run" button targets one node explicitly since a workflow may have several triggers.</summary>
@@ -136,7 +198,7 @@ public class WorkflowsController : ControllerBase
     [HttpGet("~/api/node-types")]
     public ActionResult<List<string>> NodeTypes() => _registry.RegisteredTypes.OrderBy(t => t).ToList();
 
-    private static void ApplyGraph(Workflow workflow, UpsertWorkflowRequest request)
+    private void ApplyGraph(Workflow workflow, UpsertWorkflowRequest request)
     {
         var idMap = new Dictionary<Guid, Guid>();
 
@@ -148,7 +210,8 @@ public class WorkflowsController : ControllerBase
                 WorkflowId = workflow.Id,
                 Type = n.Type,
                 Name = n.Name,
-                ConfigJson = n.Config?.ToJsonString() ?? "{}",
+                ConfigJson = _protector.EncryptForStorage(n.Type, n.Config?.ToJsonString() ?? "{}"),
+                IsDisabled = n.IsDisabled,
                 MaxRetries = n.MaxRetries,
                 RetryDelayMs = n.RetryDelayMs <= 0 ? 1000 : n.RetryDelayMs,
                 PositionX = n.PositionX,
@@ -156,11 +219,17 @@ public class WorkflowsController : ControllerBase
             };
             idMap[n.Id] = node.Id;
             workflow.Nodes.Add(node);
+            // A node keeps its id across saves (the workflow builder always resends existing ids),
+            // so its Guid key is never the CLR default -- reached only through this already-tracked
+            // parent's navigation collection, EF's change tracker would otherwise guess Unchanged
+            // instead of Added for a genuinely brand new row. Adding to the DbSet directly forces
+            // the correct state regardless of what the key value looks like.
+            _db.WorkflowNodes.Add(node);
         }
 
         foreach (var e in request.Edges)
         {
-            workflow.Edges.Add(new WorkflowEdge
+            var edge = new WorkflowEdge
             {
                 Id = e.Id == Guid.Empty ? Guid.NewGuid() : e.Id,
                 WorkflowId = workflow.Id,
@@ -168,7 +237,9 @@ public class WorkflowsController : ControllerBase
                 SourceHandle = e.SourceHandle,
                 TargetNodeId = idMap.GetValueOrDefault(e.TargetNodeId, e.TargetNodeId),
                 TargetHandle = e.TargetHandle,
-            });
+            };
+            workflow.Edges.Add(edge);
+            _db.WorkflowEdges.Add(edge);
         }
     }
 }

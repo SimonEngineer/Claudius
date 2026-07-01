@@ -24,6 +24,17 @@ public class ScrapingProject
 
     public int MaxPages { get; set; } = 20;
 
+    /// <summary>
+    /// Extra HTTP headers sent with every request this project makes (JSON object of name/value
+    /// pairs), for sites that need an API key, an auth token, or a specific Accept-Language --
+    /// or, via a header literally named "Cookie", a fixed session for scraping behind a login.
+    /// </summary>
+    public string CustomHeadersJson { get; set; } = "{}";
+
+    /// <summary>How many days to keep completed scrape runs and their items before a background job
+    /// purges them. Null means keep forever.</summary>
+    public int? DataRetentionDays { get; set; }
+
     public Guid? RateLimitPolicyId { get; set; }
     public RateLimitPolicy? RateLimitPolicy { get; set; }
 

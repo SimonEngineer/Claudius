@@ -8,9 +8,16 @@ interface Props {
   nodeType: string;
   name: string;
   config: Record<string, unknown>;
+  isDisabled: boolean;
   maxRetries: number;
   retryDelayMs: number;
-  onChange: (patch: { name?: string; config?: Record<string, unknown>; maxRetries?: number; retryDelayMs?: number }) => void;
+  onChange: (patch: {
+    name?: string;
+    config?: Record<string, unknown>;
+    isDisabled?: boolean;
+    maxRetries?: number;
+    retryDelayMs?: number;
+  }) => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -40,7 +47,19 @@ function TextAreaField({ label, value, onChange, hint }: { label: string; value:
   );
 }
 
-export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, config, maxRetries, retryDelayMs, onChange, onDelete, onClose }: Props) {
+export default function NodeConfigPanel({
+  workflowId,
+  nodeId,
+  nodeType,
+  name,
+  config,
+  isDisabled,
+  maxRetries,
+  retryDelayMs,
+  onChange,
+  onDelete,
+  onClose,
+}: Props) {
   const setConfig = (patch: Record<string, unknown>) => onChange({ config: { ...config, ...patch } });
   const scrapingProjects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list, enabled: nodeType === "action.scrape" });
   const isTrigger = nodeType.startsWith("trigger.");
@@ -53,6 +72,13 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
       </div>
 
       <TextField label="Node name" value={name} onChange={(v) => onChange({ name: v })} />
+
+      {!isTrigger && (
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+          <input type="checkbox" checked={!isDisabled} onChange={(e) => onChange({ isDisabled: !e.target.checked })} />
+          <span className="muted">Enabled (uncheck to skip this node without deleting it)</span>
+        </label>
+      )}
 
       {nodeType === "trigger.cron" && (
         <TextField
@@ -100,6 +126,7 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
               <option value="equals">equals</option>
               <option value="notEquals">not equals</option>
               <option value="contains">contains</option>
+              <option value="matchesRegex">matches regex</option>
               <option value="greaterThan">greater than</option>
               <option value="lessThan">less than</option>
               <option value="greaterThanOrEqual">greater or equal</option>
@@ -108,7 +135,12 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
               <option value="notExists">does not exist</option>
             </select>
           </div>
-          <TextField label="Value" value={(config.value as string) ?? ""} onChange={(v) => setConfig({ value: v })} />
+          <TextField
+            label={(config.operator as string) === "matchesRegex" ? "Regex pattern" : "Value"}
+            mono={(config.operator as string) === "matchesRegex"}
+            value={(config.value as string) ?? ""}
+            onChange={(v) => setConfig({ value: v })}
+          />
         </>
       )}
 
@@ -224,7 +256,13 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
         </div>
       )}
 
-      <button className="danger" style={{ marginTop: 8 }} onClick={onDelete}>
+      <button
+        className="danger"
+        style={{ marginTop: 8 }}
+        onClick={() => {
+          if (confirm(`Delete "${name || nodeType}"? This also removes any edges connected to it.`)) onDelete();
+        }}
+      >
         Delete node
       </button>
     </div>

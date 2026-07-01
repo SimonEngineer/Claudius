@@ -13,9 +13,21 @@ public class HttpPageFetcher : IPageFetcher
         }
     }
 
-    public async Task<FetchedPage> FetchAsync(string url, CancellationToken cancellationToken = default)
+    public async Task<FetchedPage> FetchAsync(string url, IReadOnlyDictionary<string, string>? customHeaders = null, CancellationToken cancellationToken = default)
     {
-        using var response = await _httpClient.GetAsync(url, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (customHeaders is not null)
+        {
+            // Per-request, not on the shared HttpClient's default headers: this fetcher instance
+            // is reused across every project, so one project's headers must never leak into
+            // another's requests.
+            foreach (var (name, value) in customHeaders)
+            {
+                request.Headers.TryAddWithoutValidation(name, value);
+            }
+        }
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
         var html = await response.Content.ReadAsStringAsync(cancellationToken);
         return new FetchedPage(url, html, (int)response.StatusCode);
     }

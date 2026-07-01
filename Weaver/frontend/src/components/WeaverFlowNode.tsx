@@ -4,6 +4,7 @@ export interface WeaverNodeData {
   label: string;
   nodeType: string;
   config: Record<string, unknown>;
+  isDisabled: boolean;
   maxRetries: number;
   retryDelayMs: number;
   onRun?: () => void;
@@ -30,10 +31,11 @@ export default function WeaverFlowNode({ data }: NodeProps<WeaverNodeData>) {
   const isAction = category === "action";
 
   return (
-    <div className="rf-node" style={{ borderColor: color }}>
+    <div className="rf-node" style={{ borderColor: color, opacity: data.isDisabled ? 0.5 : 1 }}>
       {!isTrigger && <Handle type="target" position={Position.Left} />}
       <div className="rf-node-header" style={{ background: `${color}22`, color }}>
         {data.label}
+        {data.isDisabled && <span title="Disabled -- skipped when this workflow runs"> (off)</span>}
         {isTrigger && data.onRun && (
           <button
             style={{ float: "right", padding: "1px 8px", fontSize: 11 }}

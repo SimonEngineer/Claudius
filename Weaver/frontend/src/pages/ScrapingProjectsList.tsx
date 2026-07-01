@@ -16,6 +16,11 @@ export default function ScrapingProjectsList() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-projects"] }),
   });
 
+  const duplicateMutation = useMutation({
+    mutationFn: ScrapingProjectsApi.duplicate,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-projects"] }),
+  });
+
   return (
     <div>
       <div className="page-header">
@@ -55,6 +60,9 @@ export default function ScrapingProjectsList() {
                   <td style={{ display: "flex", gap: 6 }}>
                     <button disabled={runMutation.isPending} onClick={() => runMutation.mutate(p.id)}>
                       Run
+                    </button>
+                    <button disabled={duplicateMutation.isPending} onClick={() => duplicateMutation.mutate(p.id)}>
+                      Duplicate
                     </button>
                     <button
                       className="danger"

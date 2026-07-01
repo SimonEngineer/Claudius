@@ -17,6 +17,8 @@ const emptyForm: UpsertScrapingProjectRequest = {
   nextPageSelector: null,
   pageUrlTemplate: null,
   maxPages: 20,
+  customHeaders: {},
+  dataRetentionDays: null,
   rateLimitPolicyId: null,
   isEnabled: true,
   fields: [],
@@ -49,23 +51,37 @@ export default function ScrapingProjectEditor() {
     enabled: !isNew,
     refetchInterval: 3000,
   });
+  const [itemsPage, setItemsPage] = useState(1);
+  const itemsPageSize = 20;
   const items = useQuery({
-    queryKey: ["scraping-project-items", id],
-    queryFn: () => ScrapingProjectsApi.items(id!),
+    queryKey: ["scraping-project-items", id, itemsPage],
+    queryFn: () => ScrapingProjectsApi.items(id!, itemsPage, itemsPageSize),
     enabled: !isNew,
   });
+  const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const [form, setForm] = useState<UpsertScrapingProjectRequest>(emptyForm);
   const [previewUrl, setPreviewUrl] = useState("");
   const [pickTarget, setPickTarget] = useState<PickTarget>(null);
+  const [headerRows, setHeaderRows] = useState<{ key: string; value: string }[]>([]);
 
   useEffect(() => {
     if (existing.data) {
       const { id: _omit, createdAt: _c, updatedAt: _u, ...rest } = existing.data;
       setForm(rest);
       setPreviewUrl(rest.startUrl);
+      setHeaderRows(Object.entries(rest.customHeaders).map(([key, value]) => ({ key, value })));
     }
   }, [existing.data]);
+
+  const updateHeaderRows = (rows: { key: string; value: string }[]) => {
+    setHeaderRows(rows);
+    setForm((f) => ({
+      ...f,
+      customHeaders: Object.fromEntries(rows.filter((r) => r.key.trim() !== "").map((r) => [r.key, r.value])),
+    }));
+  };
 
   const saveMutation = useMutation({
     mutationFn: () => (isNew ? ScrapingProjectsApi.create(form) : ScrapingProjectsApi.update(id!, form)),
@@ -91,6 +107,7 @@ export default function ScrapingProjectEditor() {
         rateLimitPolicyId: form.rateLimitPolicyId,
         scrapingProjectId: id ?? null,
         renderMode: form.renderMode,
+        customHeaders: form.customHeaders,
       }),
   });
 
@@ -144,10 +161,9 @@ export default function ScrapingProjectEditor() {
     [pickTarget],
   );
 
-  const latestRunId = runs.data?.[0]?.id;
   const itemColumns = useMemo(() => {
     const cols = new Set<string>();
-    items.data?.forEach((i) => Object.keys(i.data).forEach((k) => cols.add(k)));
+    items.data?.items.forEach((i) => Object.keys(i.data).forEach((k) => cols.add(k)));
     return Array.from(cols);
   }, [items.data]);
 
@@ -322,7 +338,73 @@ export default function ScrapingProjectEditor() {
                   <option value="false">Disabled</option>
                 </select>
               </div>
+              <div className="field">
+                <label>Data retention (days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="Keep forever"
+                  value={form.dataRetentionDays ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, dataRetentionDays: e.target.value === "" ? null : Number(e.target.value) })
+                  }
+                />
+              </div>
             </div>
+          </div>
+
+          <div className="card">
+            <div className="page-header">
+              <h3 style={{ margin: 0, fontSize: 14 }}>Custom HTTP headers</h3>
+              <button onClick={() => updateHeaderRows([...headerRows, { key: "", value: "" }])}>+ Add header</button>
+            </div>
+            <p style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 0 }}>
+              Sent with every request this project makes -- useful for an API key, an auth token, or a specific
+              Accept-Language. A header named <code>Cookie</code> is handled specially: in Playwright render mode
+              it's applied as real browser cookies (<code>name=value; name2=value2</code>) so a login session
+              survives page navigation, not just as a raw header.
+            </p>
+            {headerRows.length > 0 && (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Header name</th>
+                    <th>Value</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {headerRows.map((row, i) => (
+                    <tr key={i}>
+                      <td>
+                        <input
+                          className="mono"
+                          placeholder="e.g. Cookie"
+                          value={row.key}
+                          onChange={(e) =>
+                            updateHeaderRows(headerRows.map((r, ri) => (ri === i ? { ...r, key: e.target.value } : r)))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="mono"
+                          value={row.value}
+                          onChange={(e) =>
+                            updateHeaderRows(headerRows.map((r, ri) => (ri === i ? { ...r, value: e.target.value } : r)))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <button className="danger" onClick={() => updateHeaderRows(headerRows.filter((_, ri) => ri !== i))}>
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
           <div className="card">
@@ -500,11 +582,27 @@ export default function ScrapingProjectEditor() {
             </div>
           )}
 
-          {!isNew && items.data && items.data.length > 0 && (
+          {!isNew && items.data && items.data.totalCount > 0 && (
             <div className="card">
-              <h3 style={{ marginTop: 0, fontSize: 14 }}>
-                Latest scraped items {latestRunId ? "" : ""}
-              </h3>
+              <div className="page-header">
+                <h3 style={{ margin: 0, fontSize: 14 }}>Scraped items ({items.data.totalCount})</h3>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as "csv" | "json")}>
+                    <option value="csv">CSV</option>
+                    <option value="json">JSON</option>
+                  </select>
+                  <button
+                    onClick={() =>
+                      ScrapingProjectsApi.exportItems(id!, exportFormat).catch(() =>
+                        setExportError("Export failed. Please try again."),
+                      )
+                    }
+                  >
+                    Export all
+                  </button>
+                </div>
+              </div>
+              {exportError && <p style={{ color: "var(--danger)", fontSize: 12 }}>{exportError}</p>}
               <table>
                 <thead>
                   <tr>
@@ -514,7 +612,7 @@ export default function ScrapingProjectEditor() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.data.slice(0, 20).map((item) => (
+                  {items.data.items.map((item) => (
                     <tr key={item.id}>
                       {itemColumns.map((c) => (
                         <td key={c} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -525,6 +623,20 @@ export default function ScrapingProjectEditor() {
                   ))}
                 </tbody>
               </table>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                <button disabled={itemsPage <= 1} onClick={() => setItemsPage((p) => Math.max(1, p - 1))}>
+                  ← Prev
+                </button>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  Page {itemsPage} of {Math.max(1, Math.ceil(items.data.totalCount / itemsPageSize))}
+                </span>
+                <button
+                  disabled={itemsPage * itemsPageSize >= items.data.totalCount}
+                  onClick={() => setItemsPage((p) => p + 1)}
+                >
+                  Next →
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -18,6 +18,8 @@ builder.Services.AddSingleton<RateLimitGate>();
 
 builder.Services.AddHostedService<ScrapeJobConsumerService>();
 builder.Services.AddHostedService<CronTriggerSchedulerService>();
+builder.Services.AddHostedService<HeartbeatService>();
+builder.Services.AddHostedService<RetentionCleanupService>();
 
 var host = builder.Build();
 

@@ -3,7 +3,7 @@ export type RenderMode = "Http" | "Playwright";
 export type FieldAttribute = "Text" | "Html" | "Href" | "Src" | "Attribute";
 export type PaginationStrategy = "None" | "NextLinkSelector" | "UrlPattern";
 export type RateLimitKeyScope = "PerHost" | "PerUrl" | "PerProject" | "Custom";
-export type RunStatus = "Pending" | "Running" | "Succeeded" | "Failed" | "Cancelled";
+export type RunStatus = "Pending" | "Running" | "Succeeded" | "Failed" | "Cancelled" | "Skipped";
 export type TriggerKind = "Manual" | "Schedule" | "Http" | "Event" | "Code";
 
 export interface FieldSelector {
@@ -30,6 +30,8 @@ export interface ScrapingProject {
   nextPageSelector: string | null;
   pageUrlTemplate: string | null;
   maxPages: number;
+  customHeaders: Record<string, string>;
+  dataRetentionDays: number | null;
   rateLimitPolicyId: string | null;
   isEnabled: boolean;
   createdAt: string;
@@ -61,6 +63,13 @@ export interface ScrapedItem {
   createdAt: string;
 }
 
+export interface PagedResult<T> {
+  items: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface TestExtractionResult {
   itemsFound: number;
   items: Record<string, string | null>[];
@@ -84,6 +93,7 @@ export interface WorkflowNode {
   type: string;
   name: string;
   config: Record<string, unknown> | null;
+  isDisabled: boolean;
   maxRetries: number;
   retryDelayMs: number;
   positionX: number;

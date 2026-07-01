@@ -17,11 +17,12 @@ public class PlaywrightPageFetcher : IPageFetcher, IAsyncDisposable
     private IPlaywright? _playwright;
     private IBrowser? _browser;
 
-    public async Task<FetchedPage> FetchAsync(string url, CancellationToken cancellationToken = default)
+    public async Task<FetchedPage> FetchAsync(string url, IReadOnlyDictionary<string, string>? customHeaders = null, CancellationToken cancellationToken = default)
     {
         var browser = await GetBrowserAsync();
 
         await using var context = await browser.NewContextAsync(new BrowserNewContextOptions { UserAgent = UserAgent });
+        await ApplyCustomHeadersAsync(context, url, customHeaders);
         var page = await context.NewPageAsync();
 
         IResponse? response;
@@ -42,6 +43,39 @@ public class PlaywrightPageFetcher : IPageFetcher, IAsyncDisposable
 
         var html = await page.ContentAsync();
         return new FetchedPage(url, html, response?.Status ?? 200);
+    }
+
+    private static async Task ApplyCustomHeadersAsync(IBrowserContext context, string url, IReadOnlyDictionary<string, string>? customHeaders)
+    {
+        if (customHeaders is null || customHeaders.Count == 0)
+        {
+            return;
+        }
+
+        var plainHeaders = customHeaders
+            .Where(h => !string.Equals(h.Key, "Cookie", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(h => h.Key, h => h.Value);
+        if (plainHeaders.Count > 0)
+        {
+            await context.SetExtraHTTPHeadersAsync(plainHeaders);
+        }
+
+        // A raw "Cookie" extra header is unreliable in real browsers (the cookie jar can override
+        // or strip it), so that one specific header is translated into real cookies instead.
+        if (customHeaders.TryGetValue("Cookie", out var cookieHeader) && !string.IsNullOrWhiteSpace(cookieHeader))
+        {
+            var domain = new Uri(url).Host;
+            var cookies = cookieHeader
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(pair => pair.Split('=', 2))
+                .Where(parts => parts.Length == 2)
+                .Select(parts => new Cookie { Name = parts[0].Trim(), Value = parts[1].Trim(), Domain = domain, Path = "/" })
+                .ToArray();
+            if (cookies.Length > 0)
+            {
+                await context.AddCookiesAsync(cookies);
+            }
+        }
     }
 
     private async Task<IBrowser> GetBrowserAsync()

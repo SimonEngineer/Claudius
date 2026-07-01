@@ -45,7 +45,10 @@ public enum RunStatus
     Running,
     Succeeded,
     Failed,
-    Cancelled
+    Cancelled,
+
+    /// <summary>Node was disabled -- its input passed straight through unexecuted, not counted as success or failure.</summary>
+    Skipped
 }
 
 public enum TriggerKind

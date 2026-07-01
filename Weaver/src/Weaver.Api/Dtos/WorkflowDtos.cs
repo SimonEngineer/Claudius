@@ -1,15 +1,22 @@
 using Weaver.Domain;
+using Weaver.Infrastructure.Security;
 
 namespace Weaver.Api.Dtos;
 
 public record WorkflowNodeDto(
     Guid Id, string Type, string Name, System.Text.Json.Nodes.JsonNode? Config,
-    int MaxRetries, int RetryDelayMs, double PositionX, double PositionY)
+    bool IsDisabled, int MaxRetries, int RetryDelayMs, double PositionX, double PositionY)
 {
-    public static WorkflowNodeDto FromEntity(WorkflowNode n) => new(
-        n.Id, n.Type, n.Name,
-        string.IsNullOrWhiteSpace(n.ConfigJson) ? null : System.Text.Json.Nodes.JsonNode.Parse(n.ConfigJson),
-        n.MaxRetries, n.RetryDelayMs, n.PositionX, n.PositionY);
+    /// <summary>Decrypts any encrypted-at-rest fields (e.g. a Discord webhook URL) back to plaintext
+    /// so the workflow builder can display and re-edit them like any other config value.</summary>
+    public static WorkflowNodeDto FromEntity(WorkflowNode n, ISensitiveConfigProtector protector)
+    {
+        var configJson = string.IsNullOrWhiteSpace(n.ConfigJson) ? null : protector.DecryptForUse(n.Type, n.ConfigJson);
+        return new(
+            n.Id, n.Type, n.Name,
+            configJson is null ? null : System.Text.Json.Nodes.JsonNode.Parse(configJson),
+            n.IsDisabled, n.MaxRetries, n.RetryDelayMs, n.PositionX, n.PositionY);
+    }
 }
 
 public record WorkflowEdgeDto(Guid Id, Guid SourceNodeId, string? SourceHandle, Guid TargetNodeId, string? TargetHandle)
@@ -19,9 +26,9 @@ public record WorkflowEdgeDto(Guid Id, Guid SourceNodeId, string? SourceHandle, 
 
 public record WorkflowDto(Guid Id, string Name, string? Description, bool IsEnabled, DateTimeOffset UpdatedAt, List<WorkflowNodeDto> Nodes, List<WorkflowEdgeDto> Edges)
 {
-    public static WorkflowDto FromEntity(Workflow w) => new(
+    public static WorkflowDto FromEntity(Workflow w, ISensitiveConfigProtector protector) => new(
         w.Id, w.Name, w.Description, w.IsEnabled, w.UpdatedAt,
-        w.Nodes.Select(WorkflowNodeDto.FromEntity).ToList(),
+        w.Nodes.Select(n => WorkflowNodeDto.FromEntity(n, protector)).ToList(),
         w.Edges.Select(WorkflowEdgeDto.FromEntity).ToList());
 }
 

@@ -3,6 +3,7 @@ import { getStoredToken } from "../auth/tokenStorage";
 import type {
   FieldSelector,
   NodeRun,
+  PagedResult,
   RateLimitPolicy,
   RenderMode,
   ScrapedItem,
@@ -26,12 +27,30 @@ export const ScrapingProjectsApi = {
   update: (id: string, body: UpsertScrapingProjectRequest) =>
     apiClient.put<ScrapingProject>(`/api/scraping-projects/${id}`, body).then((r) => r.data),
   remove: (id: string) => apiClient.delete(`/api/scraping-projects/${id}`),
+  duplicate: (id: string) => apiClient.post<ScrapingProject>(`/api/scraping-projects/${id}/duplicate`).then((r) => r.data),
   run: (id: string) => apiClient.post<{ jobId: string }>(`/api/scraping-projects/${id}/run`).then((r) => r.data),
   runs: (id: string) => apiClient.get<ScrapeRun[]>(`/api/scraping-projects/${id}/runs`).then((r) => r.data),
-  items: (id: string, runId?: string) =>
+  items: (id: string, page = 1, pageSize = 50, runId?: string) =>
     apiClient
-      .get<ScrapedItem[]>(`/api/scraping-projects/${id}/items`, { params: runId ? { runId } : {} })
+      .get<PagedResult<ScrapedItem>>(`/api/scraping-projects/${id}/items`, {
+        params: { page, pageSize, ...(runId ? { runId } : {}) },
+      })
       .then((r) => r.data),
+  exportItems: async (id: string, format: "csv" | "json", runId?: string) => {
+    const response = await apiClient.get(`/api/scraping-projects/${id}/items/export`, {
+      params: { format, ...(runId ? { runId } : {}) },
+      responseType: "blob",
+    });
+    const disposition = response.headers["content-disposition"] as string | undefined;
+    const match = disposition?.match(/filename="?([^"]+)"?/);
+    const filename = match?.[1] ?? `items.${format}`;
+    const url = URL.createObjectURL(response.data as Blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
   testExtract: (body: {
     url: string;
     mode: ScrapeMode;
@@ -40,6 +59,7 @@ export const ScrapingProjectsApi = {
     rateLimitPolicyId: string | null;
     scrapingProjectId: string | null;
     renderMode: RenderMode;
+    customHeaders: Record<string, string>;
   }) => apiClient.post<TestExtractionResult>("/api/scraping-projects/test-extract", body).then((r) => r.data),
 };
 
@@ -59,6 +79,7 @@ export const WorkflowsApi = {
   update: (id: string, body: UpsertWorkflowRequest) =>
     apiClient.put<Workflow>(`/api/workflows/${id}`, body).then((r) => r.data),
   remove: (id: string) => apiClient.delete(`/api/workflows/${id}`),
+  duplicate: (id: string) => apiClient.post<Workflow>(`/api/workflows/${id}/duplicate`).then((r) => r.data),
   runFromNode: (workflowId: string, nodeId: string, payload: unknown = null) =>
     apiClient
       .post<{ runId: string }>(`/api/workflows/${workflowId}/nodes/${nodeId}/run`, payload)

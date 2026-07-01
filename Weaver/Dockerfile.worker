@@ -14,4 +14,6 @@ RUN dotnet publish src/Weaver.Worker/Weaver.Worker.csproj -c Release -o /app --n
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
+HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=3 \
+    CMD find /tmp/weaver-worker-heartbeat -mmin -1 2>/dev/null | grep -q . || exit 1
 ENTRYPOINT ["dotnet", "Weaver.Worker.dll"]

@@ -31,6 +31,7 @@ function toRfNode(n: ApiWorkflowNode, onRun: (nodeId: string) => void): Node<Wea
       label: n.name,
       nodeType: n.type,
       config: (n.config as Record<string, unknown>) ?? {},
+      isDisabled: n.isDisabled,
       maxRetries: n.maxRetries,
       retryDelayMs: n.retryDelayMs,
       onRun: n.type.startsWith("trigger.") ? () => onRun(n.id) : undefined,
@@ -66,6 +67,7 @@ function snapshot(
       type: n.data.nodeType,
       name: n.data.label,
       config: n.data.config,
+      isDisabled: n.data.isDisabled,
       maxRetries: n.data.maxRetries,
       retryDelayMs: n.data.retryDelayMs,
       x: Math.round(n.position.x),
@@ -147,6 +149,7 @@ function WorkflowEditorInner() {
           type: n.data.nodeType,
           name: n.data.label,
           config: n.data.config,
+          isDisabled: n.data.isDisabled ?? false,
           maxRetries: n.data.maxRetries ?? 0,
           retryDelayMs: n.data.retryDelayMs ?? 1000,
           positionX: n.position.x,
@@ -192,6 +195,7 @@ function WorkflowEditorInner() {
           label: entry.label,
           nodeType: entry.type,
           config: { ...entry.defaultConfig },
+          isDisabled: false,
           maxRetries: 0,
           retryDelayMs: 1000,
           onRun: entry.type.startsWith("trigger.") ? () => handleRun(newNode.id) : undefined,
@@ -207,6 +211,7 @@ function WorkflowEditorInner() {
   const updateSelectedNode = (patch: {
     name?: string;
     config?: Record<string, unknown>;
+    isDisabled?: boolean;
     maxRetries?: number;
     retryDelayMs?: number;
   }) => {
@@ -219,6 +224,7 @@ function WorkflowEditorInner() {
                 ...n.data,
                 label: patch.name ?? n.data.label,
                 config: patch.config ?? n.data.config,
+                isDisabled: patch.isDisabled ?? n.data.isDisabled,
                 maxRetries: patch.maxRetries ?? n.data.maxRetries,
                 retryDelayMs: patch.retryDelayMs ?? n.data.retryDelayMs,
               },
@@ -299,6 +305,7 @@ function WorkflowEditorInner() {
               nodeType={selectedNode.data.nodeType}
               name={selectedNode.data.label}
               config={selectedNode.data.config}
+              isDisabled={selectedNode.data.isDisabled}
               maxRetries={selectedNode.data.maxRetries}
               retryDelayMs={selectedNode.data.retryDelayMs}
               onChange={updateSelectedNode}

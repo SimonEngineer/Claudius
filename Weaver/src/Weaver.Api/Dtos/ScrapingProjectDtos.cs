@@ -25,6 +25,8 @@ public record ScrapingProjectDto(
     string? NextPageSelector,
     string? PageUrlTemplate,
     int MaxPages,
+    Dictionary<string, string> CustomHeaders,
+    int? DataRetentionDays,
     Guid? RateLimitPolicyId,
     bool IsEnabled,
     DateTimeOffset CreatedAt,
@@ -33,7 +35,8 @@ public record ScrapingProjectDto(
 {
     public static ScrapingProjectDto FromEntity(ScrapingProject p) => new(
         p.Id, p.Name, p.Description, p.StartUrl, p.Mode, p.RenderMode, p.ItemSelector, p.PaginationStrategy,
-        p.NextPageSelector, p.PageUrlTemplate, p.MaxPages, p.RateLimitPolicyId, p.IsEnabled,
+        p.NextPageSelector, p.PageUrlTemplate, p.MaxPages, Weaver.Scraping.CustomHeadersParser.Parse(p.CustomHeadersJson),
+        p.DataRetentionDays, p.RateLimitPolicyId, p.IsEnabled,
         p.CreatedAt, p.UpdatedAt,
         p.Fields.OrderBy(f => f.Order).Select(f => new FieldSelectorDto(
             f.Id, f.Name, f.Selector, f.Attribute, f.AttributeName, f.ResolveUrl, f.IsKey, f.Required, f.Order)).ToList());
@@ -50,6 +53,8 @@ public record UpsertScrapingProjectRequest(
     string? NextPageSelector,
     string? PageUrlTemplate,
     int MaxPages,
+    Dictionary<string, string>? CustomHeaders,
+    int? DataRetentionDays,
     Guid? RateLimitPolicyId,
     bool IsEnabled,
     List<FieldSelectorDto> Fields);
@@ -77,6 +82,8 @@ public record ScrapedItemDto(Guid Id, string SourceUrl, string ItemKey, Dictiona
     public static ScrapedItemDto FromEntity(ScrapedItem i) => new(i.Id, i.SourceUrl, i.ItemKey, i.Data, i.CreatedAt);
 }
 
+public record PagedResult<T>(List<T> Items, int TotalCount, int Page, int PageSize);
+
 public record TestExtractionRequest(
     string Url,
     ScrapeMode Mode,
@@ -84,4 +91,5 @@ public record TestExtractionRequest(
     List<FieldSelectorDto> Fields,
     Guid? RateLimitPolicyId,
     Guid? ScrapingProjectId,
-    RenderMode RenderMode);
+    RenderMode RenderMode,
+    Dictionary<string, string>? CustomHeaders);

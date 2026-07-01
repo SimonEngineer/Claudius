@@ -9,6 +9,10 @@ export default function WorkflowsList() {
     mutationFn: WorkflowsApi.remove,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
   });
+  const duplicateMutation = useMutation({
+    mutationFn: WorkflowsApi.duplicate,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
+  });
 
   return (
     <div>
@@ -44,7 +48,10 @@ export default function WorkflowsList() {
                     </span>
                   </td>
                   <td className="muted">{new Date(w.updatedAt).toLocaleString()}</td>
-                  <td>
+                  <td style={{ display: "flex", gap: 6 }}>
+                    <button disabled={duplicateMutation.isPending} onClick={() => duplicateMutation.mutate(w.id)}>
+                      Duplicate
+                    </button>
                     <button
                       className="danger"
                       onClick={() => {

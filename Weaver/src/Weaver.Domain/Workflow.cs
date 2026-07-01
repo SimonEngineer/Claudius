@@ -29,6 +29,9 @@ public class WorkflowNode
     public string Name { get; set; } = string.Empty;
     public string ConfigJson { get; set; } = "{}";
 
+    /// <summary>When true, this node isn't executed at all; its input passes straight through as its output, as if it were never in the graph.</summary>
+    public bool IsDisabled { get; set; }
+
     /// <summary>Extra attempts after an initial failure (0 = no retry). Ignored by trigger nodes.</summary>
     public int MaxRetries { get; set; }
 
