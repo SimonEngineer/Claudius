@@ -1,10 +1,15 @@
 import { apiClient } from "./client";
+import { getStoredToken } from "../auth/tokenStorage";
 import type {
+  FieldSelector,
   NodeRun,
   RateLimitPolicy,
+  RenderMode,
   ScrapedItem,
+  ScrapeMode,
   ScrapeRun,
   ScrapingProject,
+  TestExtractionResult,
   UpsertRateLimitPolicyRequest,
   UpsertScrapingProjectRequest,
   UpsertWorkflowRequest,
@@ -27,6 +32,15 @@ export const ScrapingProjectsApi = {
     apiClient
       .get<ScrapedItem[]>(`/api/scraping-projects/${id}/items`, { params: runId ? { runId } : {} })
       .then((r) => r.data),
+  testExtract: (body: {
+    url: string;
+    mode: ScrapeMode;
+    itemSelector: string | null;
+    fields: FieldSelector[];
+    rateLimitPolicyId: string | null;
+    scrapingProjectId: string | null;
+    renderMode: RenderMode;
+  }) => apiClient.post<TestExtractionResult>("/api/scraping-projects/test-extract", body).then((r) => r.data),
 };
 
 export const RateLimitPoliciesApi = {
@@ -57,7 +71,20 @@ export const WorkflowsApi = {
 
 export type { NodeRun };
 
-export const proxyUrl = (targetUrl: string) => {
+export const proxyUrl = (
+  targetUrl: string,
+  rateLimitPolicyId?: string | null,
+  scrapingProjectId?: string,
+  renderMode?: RenderMode,
+) => {
   const base = apiClient.defaults.baseURL ?? "";
-  return `${base}/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+  const params = new URLSearchParams({ url: targetUrl });
+  if (rateLimitPolicyId) params.set("rateLimitPolicyId", rateLimitPolicyId);
+  if (scrapingProjectId) params.set("scrapingProjectId", scrapingProjectId);
+  if (renderMode) params.set("renderMode", renderMode);
+  // The iframe's `src` GET can't carry an Authorization header, so the proxy endpoint alone
+  // also accepts the token via this query param (see Program.cs's JwtBearerEvents).
+  const token = getStoredToken();
+  if (token) params.set("access_token", token);
+  return `${base}/api/proxy?${params.toString()}`;
 };

@@ -2,12 +2,14 @@ using Weaver.Domain;
 
 namespace Weaver.Api.Dtos;
 
-public record WorkflowNodeDto(Guid Id, string Type, string Name, System.Text.Json.Nodes.JsonNode? Config, double PositionX, double PositionY)
+public record WorkflowNodeDto(
+    Guid Id, string Type, string Name, System.Text.Json.Nodes.JsonNode? Config,
+    int MaxRetries, int RetryDelayMs, double PositionX, double PositionY)
 {
     public static WorkflowNodeDto FromEntity(WorkflowNode n) => new(
         n.Id, n.Type, n.Name,
         string.IsNullOrWhiteSpace(n.ConfigJson) ? null : System.Text.Json.Nodes.JsonNode.Parse(n.ConfigJson),
-        n.PositionX, n.PositionY);
+        n.MaxRetries, n.RetryDelayMs, n.PositionX, n.PositionY);
 }
 
 public record WorkflowEdgeDto(Guid Id, Guid SourceNodeId, string? SourceHandle, Guid TargetNodeId, string? TargetHandle)

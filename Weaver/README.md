@@ -52,11 +52,20 @@ before being marked Failed.
 ### Workflow engine
 
 A `Workflow` is a graph of `WorkflowNode`s and `WorkflowEdge`s (exactly what the React Flow
-canvas edits). Running a workflow walks the graph breadth-first from one trigger node: each
-node executes once, a Condition node's `true`/`false` result decides which edges are followed
-(so the untaken branch's nodes never run), and edges tagged `error` route around a failed node's
-default output. Everything is `JsonNode` under the hood so nodes don't need to know about each
-other's shapes ahead of time.
+canvas edits). Running a workflow uses a dataflow scheduler starting from one trigger node: a
+node only runs once every incoming edge has either delivered a value or been pruned (its source
+ran but took a different branch), so a **merge node with two upstream paths waits for both**
+instead of firing on whichever arrives first, combining their outputs into one object keyed by
+each predecessor's name. A Condition node's `true`/`false` result decides which edges are "taken"
+(so the untaken branch's nodes never run at all), and edges tagged `error` route around a failed
+node's default output. A node can be configured with **retries** (`MaxRetries`/`RetryDelayMs`) so
+a transient failure (a flaky SMTP send, a temporary 503) doesn't fail the whole run immediately.
+
+Every node's output stays addressable **by name** for the rest of the run, not just by its
+immediate successor: `NodeExecutionContext.AllNodeOutputs` (`Nodes` inside a Code Block script)
+lets a Condition, template, or script three hops downstream reference `"Scrape Fixture.items"`
+just as easily as the node right before it. Everything is `JsonNode` under the hood so nodes
+don't need to know about each other's shapes ahead of time.
 
 Nodes are just implementations of `INodeHandler` registered in DI -- adding a new block type is
 adding one class. Built-in blocks:
@@ -67,16 +76,19 @@ adding one class. Built-in blocks:
 | `trigger.cron` | Fired by the Worker's cron scheduler (config: `cronExpression`) |
 | `trigger.http` | Fired by `POST /api/webhooks/{workflowId}/{nodeId}` (config: optional `secret`) |
 | `trigger.event` | Fired by `IWorkflowEventPublisher.PublishAsync` (config: `eventName`) |
-| `condition` | Branches true/false on a dot-path field (config: `field`, `operator`, `value`) |
-| `action.scrape` | Runs a scraping project inline (config: `scrapingProjectId`) |
-| `action.sendEmail` | Sends an SMTP email (config: `to`, `subject`, `body`, `{{dot.path}}` templating) |
+| `condition` | Branches true/false on a field (config: `field`, `operator`, `value`; both accept `NodeName.path` and `{{templates}}`) |
+| `action.scrape` | Queues a scraping project run on the same distributed job queue as "Run now" and waits for a worker to finish it (config: `scrapingProjectId`) -- requires at least one `Weaver.Worker` instance running |
+| `action.sendEmail` | Sends an SMTP email (config: `to` (comma-separated, templated), `subject`, `body`) |
 | `action.sendDiscord` | Posts to a Discord webhook (config: `webhookUrl`, `message`) |
-| `action.code` | Runs a C# script via Roslyn scripting, with `Data`/`Db`/`Log`/`PublishEventAsync` globals |
+| `action.code` | Runs a C# script via Roslyn scripting, with `Data`/`Nodes`/`Db`/`Log`/`PublishEventAsync` globals and a configurable `timeoutSeconds` |
 | `action.fileLogger` | Appends to a csv/ndjson/txt file (config: `filePath`, `format`) |
 
 The scraper raises `scrape.item.found`, `scrape.item.changed`, `scrape.run.completed`, and
 `scrape.run.failed` events after every run, so a workflow with an Event Trigger node listening
-for `scrape.item.changed` is how you build "email me when the price drops."
+for `scrape.item.changed` is how you build "email me when the price drops." Change-detection
+matches items across runs by whichever field(s) are marked **Key** in the project's field list --
+without one, Weaver falls back to page URL + position, so mark a stable field (a detail URL, a
+SKU) as Key whenever you want reliable change tracking.
 
 **Using it from code, not just the GUI:** anything with access to `IWorkflowEventPublisher` (a
 plain DI service) can call `PublishAsync("my.event", payload)` and have the exact same effect as
@@ -84,14 +96,29 @@ a workflow author dragging an Event Trigger block onto the canvas -- no GUI requ
 
 ### Point-and-click page picker
 
-`PageProxyService` fetches the target page server-side, adds a `<base href>` tag so relative
-links/images still resolve, strips any CSP/X-Frame-Options the page declares via `<meta>`, and
-appends a small overlay script before handing it back. The frontend puts that in an iframe;
-clicking an element posts its selector back via `postMessage`. Clicks never navigate the iframe
-(they're all `preventDefault`ed) -- to browse elsewhere, change the preview URL in the parent app.
-When picking a field, the parent tells the overlay the current "item selector" so it can report a
-selector *relative to the item container* (works identically for every row) rather than an
-absolute one that would only match the single element you clicked.
+`PageProxyService` fetches the target page server-side (respecting the same rate limiter as real
+runs), adds a `<base href>` tag so relative links/images still resolve, strips any
+CSP/X-Frame-Options the page declares via `<meta>`, and appends a small overlay script before
+handing it back. The frontend puts that in an iframe; clicking an element posts its selector back
+via `postMessage`. Clicks never navigate the iframe (they're all `preventDefault`ed) -- to browse
+elsewhere, change the preview URL in the parent app. When picking a field, the parent tells the
+overlay the current "item selector" so it can report a selector *relative to the item container*
+(works identically for every row) rather than an absolute one that would only match the single
+element you clicked.
+
+Before saving, use **Test extraction** to run the current selectors against the previewed page
+and see exactly what they'd produce -- without persisting anything or spending a real (queued)
+scrape run.
+
+### Rendering modes
+
+Each project has a `RenderMode`: `Http` (plain GET + parse -- fast, no browser) or `Playwright`
+(renders the page in headless Chromium first, so client-side/JS-rendered content is present
+before extraction runs). The picker, test-extraction, and real scrape runs all honor this setting
+via the same `IPageFetcherFactory`, so a Playwright-mode project previews against the actually-
+rendered DOM too. Chromium isn't downloaded by default -- set `WEAVER_ENABLE_PLAYWRIGHT=true` on
+an instance to have it install itself at startup (see docker-compose.yml's worker services), or
+point `WEAVER_PLAYWRIGHT_EXECUTABLE_PATH` at a Chromium binary you've provisioned yourself.
 
 ## Running locally
 

@@ -38,6 +38,9 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Database=weaver;Username=weaver;Password=weaver"
       ConnectionStrings__Redis: "redis:6379"
       Cors__AllowedOrigins__0: "http://localhost:5173"
+      # Set to "true" to have this instance install Playwright's Chromium at startup (needed
+      # only if a scraping project's or a test-extraction request's RenderMode is Playwright).
+      WEAVER_ENABLE_PLAYWRIGHT: "false"
     ports:
       - "5080:8080"
 
@@ -57,6 +60,7 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Database=weaver;Username=weaver;Password=weaver"
       ConnectionStrings__Redis: "redis:6379"
       WEAVER_INSTANCE_ID: "worker-1"
+      WEAVER_ENABLE_PLAYWRIGHT: "true"
 
   worker-2:
     build:
@@ -71,6 +75,7 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Database=weaver;Username=weaver;Password=weaver"
       ConnectionStrings__Redis: "redis:6379"
       WEAVER_INSTANCE_ID: "worker-2"
+      WEAVER_ENABLE_PLAYWRIGHT: "true"
 
   frontend:
     build:

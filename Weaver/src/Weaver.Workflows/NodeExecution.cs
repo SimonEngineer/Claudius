@@ -11,8 +11,20 @@ public class NodeExecutionContext
     /// <summary>Handler-specific config, deserialized from WorkflowNode.ConfigJson.</summary>
     public required JsonNode? Config { get; init; }
 
-    /// <summary>Merged output(s) of upstream node(s), or the original trigger payload for trigger nodes.</summary>
+    /// <summary>
+    /// This node's input: the single upstream predecessor's output verbatim, or -- for a merge
+    /// node with more than one predecessor -- a JsonObject keyed by each contributing node's
+    /// Name. For trigger nodes, this is the original trigger payload.
+    /// </summary>
     public required JsonNode? Input { get; init; }
+
+    /// <summary>
+    /// Every node's output produced so far in this run, keyed by node Name (case-insensitive),
+    /// letting Condition/Template/Code nodes reach back to any earlier node's data -- not just
+    /// their immediate predecessor's. Prefer a dot-path like "NodeName.field" over plain "field"
+    /// to disambiguate once a workflow has more than a couple of nodes.
+    /// </summary>
+    public required IReadOnlyDictionary<string, JsonNode?> AllNodeOutputs { get; init; }
 
     public required IServiceProvider Services { get; init; }
     public required Action<string> Log { get; init; }

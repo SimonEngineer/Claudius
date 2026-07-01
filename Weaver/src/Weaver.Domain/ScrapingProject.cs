@@ -3,11 +3,13 @@ namespace Weaver.Domain;
 public class ScrapingProject
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OwnerUserId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string StartUrl { get; set; } = string.Empty;
 
     public ScrapeMode Mode { get; set; } = ScrapeMode.List;
+    public RenderMode RenderMode { get; set; } = RenderMode.Http;
 
     /// <summary>CSS selector for the repeating item container. Required when Mode == List.</summary>
     public string? ItemSelector { get; set; }

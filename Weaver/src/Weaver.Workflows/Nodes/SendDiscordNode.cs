@@ -24,7 +24,7 @@ public class SendDiscordNode : INodeHandler
             return NodeExecutionResult.Fail("Send Discord node is missing 'webhookUrl' in config.");
         }
 
-        var content = TemplateEngine.Render(messageTemplate, context.Input);
+        var content = TemplateEngine.Render(messageTemplate, context.Input, context.AllNodeOutputs);
         var client = _httpClientFactory.CreateClient("discord-webhook");
 
         var response = await client.PostAsJsonAsync(webhookUrl, new { content }, context.CancellationToken);

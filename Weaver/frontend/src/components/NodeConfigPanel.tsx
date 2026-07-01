@@ -8,7 +8,9 @@ interface Props {
   nodeType: string;
   name: string;
   config: Record<string, unknown>;
-  onChange: (patch: { name?: string; config?: Record<string, unknown> }) => void;
+  maxRetries: number;
+  retryDelayMs: number;
+  onChange: (patch: { name?: string; config?: Record<string, unknown>; maxRetries?: number; retryDelayMs?: number }) => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -38,9 +40,10 @@ function TextAreaField({ label, value, onChange, hint }: { label: string; value:
   );
 }
 
-export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, config, onChange, onDelete, onClose }: Props) {
+export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, config, maxRetries, retryDelayMs, onChange, onDelete, onClose }: Props) {
   const setConfig = (patch: Record<string, unknown>) => onChange({ config: { ...config, ...patch } });
   const scrapingProjects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list, enabled: nodeType === "action.scrape" });
+  const isTrigger = nodeType.startsWith("trigger.");
 
   return (
     <div className="card" style={{ position: "sticky", top: 0 }}>
@@ -86,7 +89,7 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
       {nodeType === "condition" && (
         <>
           <TextField
-            label="Field (dot path, e.g. current.price)"
+            label="Field (dot path, e.g. current.price or Scrape Fixture.itemsChanged)"
             mono
             value={(config.field as string) ?? ""}
             onChange={(v) => setConfig({ field: v })}
@@ -128,7 +131,13 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
 
       {nodeType === "action.sendEmail" && (
         <>
-          <TextField label="To" value={(config.to as string) ?? ""} onChange={(v) => setConfig({ to: v })} />
+          <TextField
+            label="To (comma-separated, supports {{dot.path}} or {{Node Name.path}})"
+            mono
+            value={(config.to as string) ?? ""}
+            onChange={(v) => setConfig({ to: v })}
+            placeholder="you@example.com, {{current.ownerEmail}}"
+          />
           <TextField
             label="Subject"
             mono
@@ -140,7 +149,7 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
             label="Body"
             value={(config.body as string) ?? ""}
             onChange={(v) => setConfig({ body: v })}
-            hint="Use {{dot.path}} to reference the upstream node's output."
+            hint="Use {{dot.path}} for the upstream node's output, or {{Node Name.path}} to reach back to any earlier node."
           />
         </>
       )}
@@ -157,18 +166,25 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
             label="Message"
             value={(config.message as string) ?? ""}
             onChange={(v) => setConfig({ message: v })}
-            hint="Use {{dot.path}} to reference the upstream node's output."
+            hint="Use {{dot.path}} for the upstream node's output, or {{Node Name.path}} to reach back to any earlier node."
           />
         </>
       )}
 
       {nodeType === "action.code" && (
-        <TextAreaField
-          label="C# script"
-          value={(config.code as string) ?? ""}
-          onChange={(v) => setConfig({ code: v })}
-          hint="Globals available: Data, Db (read-only queries), Log(string), PublishEventAsync(name, payload). Last expression is the node's output."
-        />
+        <>
+          <TextAreaField
+            label="C# script"
+            value={(config.code as string) ?? ""}
+            onChange={(v) => setConfig({ code: v })}
+            hint="Globals available: Data, Nodes (any earlier node's output by name), Db (read-only queries), Log(string), PublishEventAsync(name, payload). Last expression is the node's output."
+          />
+          <TextField
+            label="Timeout (seconds)"
+            value={String((config.timeoutSeconds as number) ?? 30)}
+            onChange={(v) => setConfig({ timeoutSeconds: Number(v) || 30 })}
+          />
+        </>
       )}
 
       {nodeType === "action.fileLogger" && (
@@ -183,6 +199,29 @@ export default function NodeConfigPanel({ workflowId, nodeId, nodeType, name, co
             </select>
           </div>
         </>
+      )}
+
+      {!isTrigger && (
+        <div className="row" style={{ marginTop: 8 }}>
+          <div className="field">
+            <label>Retries on failure</label>
+            <input
+              type="number"
+              min={0}
+              value={maxRetries}
+              onChange={(e) => onChange({ maxRetries: Math.max(0, Number(e.target.value)) })}
+            />
+          </div>
+          <div className="field">
+            <label>Retry delay (ms)</label>
+            <input
+              type="number"
+              min={0}
+              value={retryDelayMs}
+              onChange={(e) => onChange({ retryDelayMs: Math.max(0, Number(e.target.value)) })}
+            />
+          </div>
+        </div>
       )}
 
       <button className="danger" style={{ marginTop: 8 }} onClick={onDelete}>

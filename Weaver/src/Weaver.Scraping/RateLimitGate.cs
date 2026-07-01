@@ -11,6 +11,22 @@ namespace Weaver.Scraping;
 public class RateLimitGate
 {
     private const int MaxWaitAttempts = 100;
+
+    /// <summary>
+    /// Applied to interactive, ad-hoc fetches (the page picker, test-extraction) whenever the
+    /// project has no rate limit policy of its own assigned -- so browsing a site while building
+    /// selectors is never fully unthrottled, even before a project has been configured or saved.
+    /// </summary>
+    public static readonly RateLimitPolicy DefaultInteractivePolicy = new()
+    {
+        Id = Guid.Empty,
+        Name = "default-interactive",
+        KeyScope = RateLimitKeyScope.PerHost,
+        PermitLimit = 30,
+        WindowSeconds = 60,
+        BurstCapacity = 30,
+    };
+
     private readonly IDistributedRateLimiter _rateLimiter;
 
     public RateLimitGate(IDistributedRateLimiter rateLimiter)

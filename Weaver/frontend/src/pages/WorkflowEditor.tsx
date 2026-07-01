@@ -31,6 +31,8 @@ function toRfNode(n: ApiWorkflowNode, onRun: (nodeId: string) => void): Node<Wea
       label: n.name,
       nodeType: n.type,
       config: (n.config as Record<string, unknown>) ?? {},
+      maxRetries: n.maxRetries,
+      retryDelayMs: n.retryDelayMs,
       onRun: n.type.startsWith("trigger.") ? () => onRun(n.id) : undefined,
     },
   };
@@ -45,6 +47,32 @@ function toRfEdge(e: WorkflowEdge): Edge {
     targetHandle: e.targetHandle ?? undefined,
     label: e.sourceHandle ?? undefined,
   };
+}
+
+/** A comparable snapshot of everything Save actually persists, used to detect unsaved changes. */
+function snapshot(
+  name: string,
+  description: string,
+  isEnabled: boolean,
+  nodes: Node<WeaverNodeData>[],
+  edges: Edge[],
+): string {
+  return JSON.stringify({
+    name,
+    description,
+    isEnabled,
+    nodes: nodes.map((n) => ({
+      id: n.id,
+      type: n.data.nodeType,
+      name: n.data.label,
+      config: n.data.config,
+      maxRetries: n.data.maxRetries,
+      retryDelayMs: n.data.retryDelayMs,
+      x: Math.round(n.position.x),
+      y: Math.round(n.position.y),
+    })),
+    edges: edges.map((e) => ({ source: e.source, sourceHandle: e.sourceHandle, target: e.target, targetHandle: e.targetHandle })),
+  });
 }
 
 function WorkflowEditorInner() {
@@ -64,6 +92,7 @@ function WorkflowEditorInner() {
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const workflowIdRef = useRef<string | undefined>(id);
+  const savedSnapshotRef = useRef<string>(snapshot("New Workflow", "", true, [], []));
 
   const runNodeMutation = useMutation({
     mutationFn: ({ nodeId }: { nodeId: string }) => WorkflowsApi.runFromNode(workflowIdRef.current!, nodeId),
@@ -83,14 +112,29 @@ function WorkflowEditorInner() {
 
   useEffect(() => {
     if (existing.data) {
+      const loadedNodes = existing.data.nodes.map((n) => toRfNode(n, handleRun));
+      const loadedEdges = existing.data.edges.map(toRfEdge);
       setName(existing.data.name);
       setDescription(existing.data.description ?? "");
       setIsEnabled(existing.data.isEnabled);
-      setNodes(existing.data.nodes.map((n) => toRfNode(n, handleRun)));
-      setEdges(existing.data.edges.map(toRfEdge));
+      setNodes(loadedNodes);
+      setEdges(loadedEdges);
+      savedSnapshotRef.current = snapshot(existing.data.name, existing.data.description ?? "", existing.data.isEnabled, loadedNodes, loadedEdges);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing.data]);
+
+  const isDirty = snapshot(name, description, isEnabled, nodes, edges) !== savedSnapshotRef.current;
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -103,6 +147,8 @@ function WorkflowEditorInner() {
           type: n.data.nodeType,
           name: n.data.label,
           config: n.data.config,
+          maxRetries: n.data.maxRetries ?? 0,
+          retryDelayMs: n.data.retryDelayMs ?? 1000,
           positionX: n.position.x,
           positionY: n.position.y,
         })),
@@ -118,6 +164,7 @@ function WorkflowEditorInner() {
     },
     onSuccess: (saved) => {
       workflowIdRef.current = saved.id;
+      savedSnapshotRef.current = snapshot(name, description, isEnabled, nodes, edges);
       queryClient.invalidateQueries({ queryKey: ["workflows"] });
       if (isNew) navigate(`/workflows/${saved.id}`, { replace: true });
     },
@@ -145,6 +192,8 @@ function WorkflowEditorInner() {
           label: entry.label,
           nodeType: entry.type,
           config: { ...entry.defaultConfig },
+          maxRetries: 0,
+          retryDelayMs: 1000,
           onRun: entry.type.startsWith("trigger.") ? () => handleRun(newNode.id) : undefined,
         },
       };
@@ -155,11 +204,25 @@ function WorkflowEditorInner() {
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
-  const updateSelectedNode = (patch: { name?: string; config?: Record<string, unknown> }) => {
+  const updateSelectedNode = (patch: {
+    name?: string;
+    config?: Record<string, unknown>;
+    maxRetries?: number;
+    retryDelayMs?: number;
+  }) => {
     setNodes((nds) =>
       nds.map((n) =>
         n.id === selectedNodeId
-          ? { ...n, data: { ...n.data, label: patch.name ?? n.data.label, config: patch.config ?? n.data.config } }
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                label: patch.name ?? n.data.label,
+                config: patch.config ?? n.data.config,
+                maxRetries: patch.maxRetries ?? n.data.maxRetries,
+                retryDelayMs: patch.retryDelayMs ?? n.data.retryDelayMs,
+              },
+            }
           : n,
       ),
     );
@@ -182,6 +245,7 @@ function WorkflowEditorInner() {
           <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} /> enabled
           </label>
+          {isDirty && <span className="muted" title="Unsaved changes -- closing or reloading this tab will prompt you first">● unsaved</span>}
           <button className="primary" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
             Save
           </button>
@@ -235,6 +299,8 @@ function WorkflowEditorInner() {
               nodeType={selectedNode.data.nodeType}
               name={selectedNode.data.label}
               config={selectedNode.data.config}
+              maxRetries={selectedNode.data.maxRetries}
+              retryDelayMs={selectedNode.data.retryDelayMs}
               onChange={updateSelectedNode}
               onDelete={deleteSelectedNode}
               onClose={() => setSelectedNodeId(null)}

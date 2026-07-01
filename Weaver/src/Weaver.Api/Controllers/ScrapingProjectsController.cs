@@ -14,36 +14,49 @@ public class ScrapingProjectsController : ControllerBase
 {
     private readonly WeaverDbContext _db;
     private readonly IScrapeJobQueue _queue;
+    private readonly TestExtractionService _testExtraction;
 
-    public ScrapingProjectsController(WeaverDbContext db, IScrapeJobQueue queue)
+    public ScrapingProjectsController(WeaverDbContext db, IScrapeJobQueue queue, TestExtractionService testExtraction)
     {
+        _testExtraction = testExtraction;
         _db = db;
         _queue = queue;
     }
 
+    private Guid UserId => User.GetUserId();
+
     [HttpGet]
     public async Task<ActionResult<List<ScrapingProjectDto>>> List(CancellationToken ct)
     {
-        var projects = await _db.ScrapingProjects.Include(p => p.Fields).OrderByDescending(p => p.UpdatedAt).ToListAsync(ct);
+        var projects = await _db.ScrapingProjects.Include(p => p.Fields)
+            .Where(p => p.OwnerUserId == UserId)
+            .OrderByDescending(p => p.UpdatedAt).ToListAsync(ct);
         return projects.Select(ScrapingProjectDto.FromEntity).ToList();
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ScrapingProjectDto>> Get(Guid id, CancellationToken ct)
     {
-        var project = await _db.ScrapingProjects.Include(p => p.Fields).FirstOrDefaultAsync(p => p.Id == id, ct);
+        var project = await _db.ScrapingProjects.Include(p => p.Fields).FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
         return project is null ? NotFound() : ScrapingProjectDto.FromEntity(project);
     }
 
     [HttpPost]
     public async Task<ActionResult<ScrapingProjectDto>> Create(UpsertScrapingProjectRequest request, CancellationToken ct)
     {
+        if (!await OwnsPolicyOrNullAsync(request.RateLimitPolicyId, ct))
+        {
+            return BadRequest("Unknown rate limit policy.");
+        }
+
         var project = new ScrapingProject
         {
+            OwnerUserId = UserId,
             Name = request.Name,
             Description = request.Description,
             StartUrl = request.StartUrl,
             Mode = request.Mode,
+            RenderMode = request.RenderMode,
             ItemSelector = request.ItemSelector,
             PaginationStrategy = request.PaginationStrategy,
             NextPageSelector = request.NextPageSelector,
@@ -62,16 +75,22 @@ public class ScrapingProjectsController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<ScrapingProjectDto>> Update(Guid id, UpsertScrapingProjectRequest request, CancellationToken ct)
     {
-        var project = await _db.ScrapingProjects.Include(p => p.Fields).FirstOrDefaultAsync(p => p.Id == id, ct);
+        var project = await _db.ScrapingProjects.Include(p => p.Fields).FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
         if (project is null)
         {
             return NotFound();
+        }
+
+        if (!await OwnsPolicyOrNullAsync(request.RateLimitPolicyId, ct))
+        {
+            return BadRequest("Unknown rate limit policy.");
         }
 
         project.Name = request.Name;
         project.Description = request.Description;
         project.StartUrl = request.StartUrl;
         project.Mode = request.Mode;
+        project.RenderMode = request.RenderMode;
         project.ItemSelector = request.ItemSelector;
         project.PaginationStrategy = request.PaginationStrategy;
         project.NextPageSelector = request.NextPageSelector;
@@ -92,7 +111,7 @@ public class ScrapingProjectsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var project = await _db.ScrapingProjects.FindAsync([id], ct);
+        var project = await _db.ScrapingProjects.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
         if (project is null)
         {
             return NotFound();
@@ -107,7 +126,7 @@ public class ScrapingProjectsController : ControllerBase
     [HttpPost("{id:guid}/run")]
     public async Task<ActionResult<object>> Run(Guid id, CancellationToken ct)
     {
-        var exists = await _db.ScrapingProjects.AnyAsync(p => p.Id == id, ct);
+        var exists = await _db.ScrapingProjects.AnyAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
         if (!exists)
         {
             return NotFound();
@@ -127,6 +146,11 @@ public class ScrapingProjectsController : ControllerBase
     [HttpGet("{id:guid}/runs")]
     public async Task<ActionResult<List<ScrapeRunDto>>> Runs(Guid id, CancellationToken ct)
     {
+        if (!await _db.ScrapingProjects.AnyAsync(p => p.Id == id && p.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
         var runs = await _db.ScrapeRuns.Where(r => r.ScrapingProjectId == id).OrderByDescending(r => r.CreatedAt).Take(50).ToListAsync(ct);
         return runs.Select(ScrapeRunDto.FromEntity).ToList();
     }
@@ -134,11 +158,49 @@ public class ScrapingProjectsController : ControllerBase
     [HttpGet("{id:guid}/items")]
     public async Task<ActionResult<List<ScrapedItemDto>>> Items(Guid id, [FromQuery] Guid? runId, CancellationToken ct)
     {
+        if (!await _db.ScrapingProjects.AnyAsync(p => p.Id == id && p.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
         var query = _db.ScrapedItems.Where(i => i.ScrapingProjectId == id);
         query = runId is not null ? query.Where(i => i.ScrapeRunId == runId) : query;
         var items = await query.OrderByDescending(i => i.CreatedAt).Take(500).ToListAsync(ct);
         return items.Select(ScrapedItemDto.FromEntity).ToList();
     }
+
+    /// <summary>Runs the given (not-yet-saved) selectors against one live page and returns what they'd extract, without persisting anything -- for iterating on selectors before committing to a real run.</summary>
+    [HttpPost("test-extract")]
+    public async Task<ActionResult<TestExtractionResult>> TestExtract(TestExtractionRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Url))
+        {
+            return BadRequest("A url is required.");
+        }
+
+        var policy = request.RateLimitPolicyId is not null
+            ? await _db.RateLimitPolicies.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.RateLimitPolicyId && p.OwnerUserId == UserId, ct)
+            : null;
+
+        var fields = request.Fields.Select(f => new FieldSelector
+        {
+            Name = f.Name,
+            Selector = f.Selector,
+            Attribute = f.Attribute,
+            AttributeName = f.AttributeName,
+            ResolveUrl = f.ResolveUrl,
+            IsKey = f.IsKey,
+            Required = f.Required,
+            Order = f.Order,
+        }).ToList();
+
+        var result = await _testExtraction.ExtractAsync(
+            request.Url, request.Mode, request.ItemSelector, fields, policy, request.ScrapingProjectId ?? Guid.Empty, request.RenderMode, ct);
+        return result;
+    }
+
+    private async Task<bool> OwnsPolicyOrNullAsync(Guid? policyId, CancellationToken ct) =>
+        policyId is null || await _db.RateLimitPolicies.AnyAsync(p => p.Id == policyId && p.OwnerUserId == UserId, ct);
 
     private static void ApplyFields(ScrapingProject project, List<FieldSelectorDto> fields)
     {

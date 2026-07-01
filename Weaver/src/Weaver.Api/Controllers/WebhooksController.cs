@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Domain;
@@ -10,6 +11,7 @@ namespace Weaver.Api.Controllers;
 /// <summary>Generic inbound endpoint for "trigger.http" nodes -- config: { "secret": "..." } (optional) checked against the X-Weaver-Secret header.</summary>
 [ApiController]
 [Route("api/webhooks")]
+[AllowAnonymous]
 public class WebhooksController : ControllerBase
 {
     private readonly WeaverDbContext _db;

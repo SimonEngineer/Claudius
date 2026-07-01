@@ -23,10 +23,12 @@ public class RateLimitPoliciesController : ControllerBase
         _db = db;
     }
 
+    private Guid UserId => User.GetUserId();
+
     [HttpGet]
     public async Task<ActionResult<List<RateLimitPolicyDto>>> List(CancellationToken ct)
     {
-        var policies = await _db.RateLimitPolicies.OrderBy(p => p.Name).ToListAsync(ct);
+        var policies = await _db.RateLimitPolicies.Where(p => p.OwnerUserId == UserId).OrderBy(p => p.Name).ToListAsync(ct);
         return policies.Select(RateLimitPolicyDto.FromEntity).ToList();
     }
 
@@ -35,6 +37,7 @@ public class RateLimitPoliciesController : ControllerBase
     {
         var policy = new RateLimitPolicy
         {
+            OwnerUserId = UserId,
             Name = request.Name,
             KeyScope = request.KeyScope,
             CustomKeyTemplate = request.CustomKeyTemplate,
@@ -50,7 +53,7 @@ public class RateLimitPoliciesController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<RateLimitPolicyDto>> Update(Guid id, UpsertRateLimitPolicyRequest request, CancellationToken ct)
     {
-        var policy = await _db.RateLimitPolicies.FindAsync([id], ct);
+        var policy = await _db.RateLimitPolicies.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
         if (policy is null)
         {
             return NotFound();
@@ -70,7 +73,7 @@ public class RateLimitPoliciesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var policy = await _db.RateLimitPolicies.FindAsync([id], ct);
+        var policy = await _db.RateLimitPolicies.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
         if (policy is null)
         {
             return NotFound();

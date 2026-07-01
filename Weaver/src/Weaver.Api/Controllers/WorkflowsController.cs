@@ -22,10 +22,13 @@ public class WorkflowsController : ControllerBase
         _registry = registry;
     }
 
+    private Guid UserId => User.GetUserId();
+
     [HttpGet]
     public async Task<ActionResult<List<WorkflowDto>>> List(CancellationToken ct)
     {
         var workflows = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges)
+            .Where(w => w.OwnerUserId == UserId)
             .OrderByDescending(w => w.UpdatedAt).ToListAsync(ct);
         return workflows.Select(WorkflowDto.FromEntity).ToList();
     }
@@ -33,14 +36,14 @@ public class WorkflowsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<WorkflowDto>> Get(Guid id, CancellationToken ct)
     {
-        var workflow = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges).FirstOrDefaultAsync(w => w.Id == id, ct);
+        var workflow = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges).FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
         return workflow is null ? NotFound() : WorkflowDto.FromEntity(workflow);
     }
 
     [HttpPost]
     public async Task<ActionResult<WorkflowDto>> Create(UpsertWorkflowRequest request, CancellationToken ct)
     {
-        var workflow = new Workflow { Name = request.Name, Description = request.Description, IsEnabled = request.IsEnabled };
+        var workflow = new Workflow { OwnerUserId = UserId, Name = request.Name, Description = request.Description, IsEnabled = request.IsEnabled };
         ApplyGraph(workflow, request);
 
         _db.Workflows.Add(workflow);
@@ -52,7 +55,7 @@ public class WorkflowsController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<WorkflowDto>> Update(Guid id, UpsertWorkflowRequest request, CancellationToken ct)
     {
-        var workflow = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges).FirstOrDefaultAsync(w => w.Id == id, ct);
+        var workflow = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges).FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
         if (workflow is null)
         {
             return NotFound();
@@ -76,7 +79,7 @@ public class WorkflowsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var workflow = await _db.Workflows.FindAsync([id], ct);
+        var workflow = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
         if (workflow is null)
         {
             return NotFound();
@@ -91,7 +94,9 @@ public class WorkflowsController : ControllerBase
     [HttpPost("{id:guid}/nodes/{nodeId:guid}/run")]
     public async Task<ActionResult<object>> RunFromNode(Guid id, Guid nodeId, [FromBody] System.Text.Json.Nodes.JsonNode? payload, CancellationToken ct)
     {
-        var nodeExists = await _db.WorkflowNodes.AnyAsync(n => n.Id == nodeId && n.WorkflowId == id, ct);
+        var nodeExists = await _db.WorkflowNodes
+            .Join(_db.Workflows.Where(w => w.OwnerUserId == UserId), n => n.WorkflowId, w => w.Id, (n, w) => n)
+            .AnyAsync(n => n.Id == nodeId && n.WorkflowId == id, ct);
         if (!nodeExists)
         {
             return NotFound();
@@ -104,6 +109,11 @@ public class WorkflowsController : ControllerBase
     [HttpGet("{id:guid}/runs")]
     public async Task<ActionResult<List<WorkflowRunDto>>> Runs(Guid id, CancellationToken ct)
     {
+        if (!await _db.Workflows.AnyAsync(w => w.Id == id && w.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
         var runs = await _db.WorkflowRuns.Where(r => r.WorkflowId == id).OrderByDescending(r => r.CreatedAt).Take(50).ToListAsync(ct);
         return runs.Select(WorkflowRunDto.FromEntity).ToList();
     }
@@ -111,7 +121,9 @@ public class WorkflowsController : ControllerBase
     [HttpGet("runs/{runId:guid}")]
     public async Task<ActionResult<WorkflowRunDetailDto>> RunDetail(Guid runId, CancellationToken ct)
     {
-        var run = await _db.WorkflowRuns.FirstOrDefaultAsync(r => r.Id == runId, ct);
+        var run = await _db.WorkflowRuns
+            .Join(_db.Workflows.Where(w => w.OwnerUserId == UserId), r => r.WorkflowId, w => w.Id, (r, w) => r)
+            .FirstOrDefaultAsync(r => r.Id == runId, ct);
         if (run is null)
         {
             return NotFound();
@@ -137,6 +149,8 @@ public class WorkflowsController : ControllerBase
                 Type = n.Type,
                 Name = n.Name,
                 ConfigJson = n.Config?.ToJsonString() ?? "{}",
+                MaxRetries = n.MaxRetries,
+                RetryDelayMs = n.RetryDelayMs <= 0 ? 1000 : n.RetryDelayMs,
                 PositionX = n.PositionX,
                 PositionY = n.PositionY,
             };

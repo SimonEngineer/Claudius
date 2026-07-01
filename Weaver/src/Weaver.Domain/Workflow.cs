@@ -3,6 +3,7 @@ namespace Weaver.Domain;
 public class Workflow
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OwnerUserId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public bool IsEnabled { get; set; } = true;
@@ -27,6 +28,12 @@ public class WorkflowNode
     public string Type { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string ConfigJson { get; set; } = "{}";
+
+    /// <summary>Extra attempts after an initial failure (0 = no retry). Ignored by trigger nodes.</summary>
+    public int MaxRetries { get; set; }
+
+    /// <summary>Delay between retry attempts, in milliseconds.</summary>
+    public int RetryDelayMs { get; set; } = 1000;
 
     public double PositionX { get; set; }
     public double PositionY { get; set; }

@@ -8,6 +8,9 @@ public class WeaverScriptGlobals
     /// <summary>The upstream node's output / trigger payload, as a JSON tree.</summary>
     public JsonNode? Data { get; init; }
 
+    /// <summary>Every node's output so far in this run, keyed by node name -- e.g. Nodes["Scrape Fixture"]?["items"].</summary>
+    public required IReadOnlyDictionary<string, JsonNode?> Nodes { get; init; }
+
     /// <summary>Read-only queries against Weaver's own data (scraping projects, past runs, item history).</summary>
     public required IScriptDbAccess Db { get; init; }
 

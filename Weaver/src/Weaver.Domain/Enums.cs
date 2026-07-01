@@ -6,6 +6,15 @@ public enum ScrapeMode
     List
 }
 
+public enum RenderMode
+{
+    /// <summary>Plain HTTP GET + HTML parse. Fast, no browser required, but sees only server-rendered markup.</summary>
+    Http,
+
+    /// <summary>Renders the page in headless Chromium (via Playwright) first, so client-side/JS-rendered content is present.</summary>
+    Playwright
+}
+
 public enum FieldAttribute
 {
     Text,

@@ -17,7 +17,12 @@ public class SmtpOptions
     public bool UseStartTls { get; set; } = true;
 }
 
-/// <summary>Config: { "to": "you@example.com", "subject": "{{title}} changed!", "body": "New price: {{current.price}}" }. Templates are rendered against Input.</summary>
+/// <summary>
+/// Config: { "to": "you@example.com, {{current.ownerEmail}}", "subject": "{{title}} changed!",
+/// "body": "New price: {{current.price}}" }. "to" is templated like subject/body and accepts a
+/// comma-separated list of recipients (each rendered independently, so a template can expand to
+/// a variable number of addresses).
+/// </summary>
 public class SendEmailNode : INodeHandler
 {
     public string Type => "action.sendEmail";
@@ -31,21 +36,32 @@ public class SendEmailNode : INodeHandler
 
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context)
     {
-        var to = context.Config?["to"]?.GetValue<string>();
+        var toTemplate = context.Config?["to"]?.GetValue<string>();
         var subjectTemplate = context.Config?["subject"]?.GetValue<string>() ?? "Weaver notification";
         var bodyTemplate = context.Config?["body"]?.GetValue<string>() ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(to))
+        if (string.IsNullOrWhiteSpace(toTemplate))
         {
             return NodeExecutionResult.Fail("Send Email node is missing 'to' in config.");
+        }
+
+        var recipients = TemplateEngine.Render(toTemplate, context.Input, context.AllNodeOutputs)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        if (recipients.Count == 0)
+        {
+            return NodeExecutionResult.Fail($"Send Email node's 'to' template rendered no recipients (template: '{toTemplate}').");
         }
 
         var options = _options.Value;
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(options.FromName, options.FromAddress));
-        message.To.Add(MailboxAddress.Parse(to));
-        message.Subject = TemplateEngine.Render(subjectTemplate, context.Input);
-        message.Body = new TextPart("plain") { Text = TemplateEngine.Render(bodyTemplate, context.Input) };
+        foreach (var recipient in recipients)
+        {
+            message.To.Add(MailboxAddress.Parse(recipient));
+        }
+        message.Subject = TemplateEngine.Render(subjectTemplate, context.Input, context.AllNodeOutputs);
+        message.Body = new TextPart("plain") { Text = TemplateEngine.Render(bodyTemplate, context.Input, context.AllNodeOutputs) };
 
         using var client = new SmtpClient();
         await client.ConnectAsync(options.Host, options.Port, options.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto, context.CancellationToken);
@@ -56,7 +72,7 @@ public class SendEmailNode : INodeHandler
         await client.SendAsync(message, context.CancellationToken);
         await client.DisconnectAsync(true, context.CancellationToken);
 
-        context.Log($"sendEmail: to={to} subject=\"{message.Subject}\"");
+        context.Log($"sendEmail: to={string.Join(", ", recipients)} subject=\"{message.Subject}\"");
         return NodeExecutionResult.Ok(context.Input);
     }
 }

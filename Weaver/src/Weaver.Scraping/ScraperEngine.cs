@@ -8,14 +8,14 @@ namespace Weaver.Scraping;
 
 public class ScraperEngine
 {
-    private readonly IPageFetcher _fetcher;
+    private readonly IPageFetcherFactory _fetcherFactory;
     private readonly RateLimitGate _rateLimitGate;
     private readonly IBrowsingContext _browsingContext;
     private readonly ILogger<ScraperEngine> _logger;
 
-    public ScraperEngine(IPageFetcher fetcher, RateLimitGate rateLimitGate, ILogger<ScraperEngine> logger)
+    public ScraperEngine(IPageFetcherFactory fetcherFactory, RateLimitGate rateLimitGate, ILogger<ScraperEngine> logger)
     {
-        _fetcher = fetcher;
+        _fetcherFactory = fetcherFactory;
         _rateLimitGate = rateLimitGate;
         _logger = logger;
         _browsingContext = BrowsingContext.New(Configuration.Default);
@@ -23,6 +23,7 @@ public class ScraperEngine
 
     public async Task<ScrapeResult> RunAsync(ScrapingProject project, CancellationToken cancellationToken = default)
     {
+        var fetcher = _fetcherFactory.GetFetcher(project.RenderMode);
         var items = new List<ExtractedItem>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var currentUrl = project.StartUrl;
@@ -43,7 +44,7 @@ public class ScraperEngine
             FetchedPage fetched;
             try
             {
-                fetched = await _fetcher.FetchAsync(currentUrl, cancellationToken);
+                fetched = await fetcher.FetchAsync(currentUrl, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -73,7 +74,7 @@ public class ScraperEngine
         return new ScrapeResult(pagesCrawled, items, null);
     }
 
-    private static IEnumerable<ExtractedItem> ExtractItemsFromPage(IDocument document, ScrapingProject project, Uri pageUrl)
+    internal static IEnumerable<ExtractedItem> ExtractItemsFromPage(IDocument document, ScrapingProject project, Uri pageUrl)
     {
         if (project.Mode == ScrapeMode.SingleItem)
         {

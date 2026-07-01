@@ -4,6 +4,8 @@ export interface WeaverNodeData {
   label: string;
   nodeType: string;
   config: Record<string, unknown>;
+  maxRetries: number;
+  retryDelayMs: number;
   onRun?: () => void;
   lastStatus?: string;
 }
@@ -44,7 +46,10 @@ export default function WeaverFlowNode({ data }: NodeProps<WeaverNodeData>) {
           </button>
         )}
       </div>
-      <div className="rf-node-body">{data.nodeType}</div>
+      <div className="rf-node-body">
+        {data.nodeType}
+        {data.maxRetries > 0 && <span title="Retries on failure"> · ↻{data.maxRetries}</span>}
+      </div>
 
       {isCondition ? (
         <>

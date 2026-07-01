@@ -4,7 +4,10 @@ namespace Weaver.Workflows.Nodes;
 
 /// <summary>
 /// Config: { "field": "current.price", "operator": "lessThan", "value": "100" }.
-/// Routes to the "true" or "false" outgoing edge based on comparing Input's field against value.
+/// Routes to the "true" or "false" outgoing edge based on comparing a field against value.
+/// "field" may start with an earlier node's name (e.g. "Scrape Fixture.itemsChanged") to reach
+/// back past the immediate predecessor; "value" is template-rendered first, so it can also
+/// reference upstream data (e.g. "{{Get Threshold.maxPrice}}").
 /// </summary>
 public class ConditionNode : INodeHandler
 {
@@ -14,15 +17,16 @@ public class ConditionNode : INodeHandler
     {
         var field = context.Config?["field"]?.GetValue<string>();
         var op = context.Config?["operator"]?.GetValue<string>() ?? "equals";
-        var compareValue = context.Config?["value"]?.GetValue<string>();
+        var compareValueTemplate = context.Config?["value"]?.GetValue<string>() ?? string.Empty;
+        var compareValue = TemplateEngine.Render(compareValueTemplate, context.Input, context.AllNodeOutputs);
 
         if (string.IsNullOrWhiteSpace(field))
         {
             return Task.FromResult(NodeExecutionResult.Fail("Condition node is missing 'field' in config."));
         }
 
-        var actual = JsonPathHelper.Resolve(context.Input, field);
-        var actualString = JsonPathHelper.ResolveAsString(context.Input, field);
+        var actual = JsonPathHelper.ResolveWithContext(context.Input, context.AllNodeOutputs, field);
+        var actualString = JsonPathHelper.ResolveAsStringWithContext(context.Input, context.AllNodeOutputs, field);
         var matched = Evaluate(op, actual, actualString, compareValue);
 
         context.Log($"condition: {field} {op} {compareValue} -> actual={actualString ?? "<null>"} -> {matched}");

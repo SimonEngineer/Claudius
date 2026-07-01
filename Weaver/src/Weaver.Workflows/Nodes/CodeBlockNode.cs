@@ -10,13 +10,15 @@ using Weaver.Workflows.Scripting;
 namespace Weaver.Workflows.Nodes;
 
 /// <summary>
-/// Config: { "code": "<c# script body>" }. Executes with full trust in-process (this is a
-/// self-hosted automation tool, not a multi-tenant sandbox) -- the script sees Data, Db, Log,
-/// and PublishEventAsync as top-level members (see WeaverScriptGlobals) and its last expression
-/// becomes this node's output.
+/// Config: { "code": "<c# script body>", "timeoutSeconds": 30 }. Executes with full trust
+/// in-process (this is a self-hosted automation tool, not a multi-tenant sandbox) -- the script
+/// sees Data, Nodes, Db, Log, and PublishEventAsync as top-level members (see WeaverScriptGlobals)
+/// and its last expression becomes this node's output.
 /// </summary>
 public class CodeBlockNode : INodeHandler
 {
+    private const int DefaultTimeoutSeconds = 30;
+
     public string Type => "action.code";
 
     private static readonly ScriptOptions Options = ScriptOptions.Default
@@ -36,6 +38,8 @@ public class CodeBlockNode : INodeHandler
             return NodeExecutionResult.Fail("Code Block node is missing 'code' in config.");
         }
 
+        var timeoutSeconds = context.Config?["timeoutSeconds"]?.GetValue<int?>() ?? DefaultTimeoutSeconds;
+
         var eventPublisher = context.Services.GetRequiredService<IWorkflowEventPublisher>();
         using var scope = context.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IScriptDbAccess>();
@@ -43,14 +47,30 @@ public class CodeBlockNode : INodeHandler
         var globals = new WeaverScriptGlobals
         {
             Data = context.Input,
+            Nodes = context.AllNodeOutputs,
             Db = db,
             Log = context.Log,
             PublishEventAsync = (name, payload) => eventPublisher.PublishAsync(name, payload, context.CancellationToken),
         };
 
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+
         try
         {
-            var result = await CSharpScript.EvaluateAsync<object?>(code, Options, globals, typeof(WeaverScriptGlobals), context.CancellationToken);
+            var scriptTask = CSharpScript.EvaluateAsync<object?>(code, Options, globals, typeof(WeaverScriptGlobals), timeoutCts.Token);
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(timeoutSeconds), context.CancellationToken);
+
+            var finished = await Task.WhenAny(scriptTask, timeoutTask);
+            if (finished == timeoutTask)
+            {
+                // Roslyn scripting's cancellation is cooperative: this signals the script to stop
+                // at its next checkpoint, but can't forcibly kill a runaway synchronous loop. The
+                // node fails immediately either way so the workflow run doesn't hang on it.
+                timeoutCts.Cancel();
+                return NodeExecutionResult.Fail($"Code Block timed out after {timeoutSeconds}s.");
+            }
+
+            var result = await scriptTask;
             var output = result switch
             {
                 null => null,

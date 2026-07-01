@@ -1,4 +1,5 @@
 export type ScrapeMode = "SingleItem" | "List";
+export type RenderMode = "Http" | "Playwright";
 export type FieldAttribute = "Text" | "Html" | "Href" | "Src" | "Attribute";
 export type PaginationStrategy = "None" | "NextLinkSelector" | "UrlPattern";
 export type RateLimitKeyScope = "PerHost" | "PerUrl" | "PerProject" | "Custom";
@@ -23,6 +24,7 @@ export interface ScrapingProject {
   description: string | null;
   startUrl: string;
   mode: ScrapeMode;
+  renderMode: RenderMode;
   itemSelector: string | null;
   paginationStrategy: PaginationStrategy;
   nextPageSelector: string | null;
@@ -59,6 +61,12 @@ export interface ScrapedItem {
   createdAt: string;
 }
 
+export interface TestExtractionResult {
+  itemsFound: number;
+  items: Record<string, string | null>[];
+  errorMessage: string | null;
+}
+
 export interface RateLimitPolicy {
   id: string;
   name: string;
@@ -76,6 +84,8 @@ export interface WorkflowNode {
   type: string;
   name: string;
   config: Record<string, unknown> | null;
+  maxRetries: number;
+  retryDelayMs: number;
   positionX: number;
   positionY: number;
 }

@@ -9,6 +9,8 @@ public class WeaverDbContext : DbContext
     {
     }
 
+    public DbSet<User> Users => Set<User>();
+
     public DbSet<ScrapingProject> ScrapingProjects => Set<ScrapingProject>();
     public DbSet<FieldSelector> FieldSelectors => Set<FieldSelector>();
     public DbSet<RateLimitPolicy> RateLimitPolicies => Set<RateLimitPolicy>();

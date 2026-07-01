@@ -19,6 +19,7 @@ public record ScrapingProjectDto(
     string? Description,
     string StartUrl,
     ScrapeMode Mode,
+    RenderMode RenderMode,
     string? ItemSelector,
     PaginationStrategy PaginationStrategy,
     string? NextPageSelector,
@@ -31,7 +32,7 @@ public record ScrapingProjectDto(
     List<FieldSelectorDto> Fields)
 {
     public static ScrapingProjectDto FromEntity(ScrapingProject p) => new(
-        p.Id, p.Name, p.Description, p.StartUrl, p.Mode, p.ItemSelector, p.PaginationStrategy,
+        p.Id, p.Name, p.Description, p.StartUrl, p.Mode, p.RenderMode, p.ItemSelector, p.PaginationStrategy,
         p.NextPageSelector, p.PageUrlTemplate, p.MaxPages, p.RateLimitPolicyId, p.IsEnabled,
         p.CreatedAt, p.UpdatedAt,
         p.Fields.OrderBy(f => f.Order).Select(f => new FieldSelectorDto(
@@ -43,6 +44,7 @@ public record UpsertScrapingProjectRequest(
     string? Description,
     string StartUrl,
     ScrapeMode Mode,
+    RenderMode RenderMode,
     string? ItemSelector,
     PaginationStrategy PaginationStrategy,
     string? NextPageSelector,
@@ -74,3 +76,12 @@ public record ScrapedItemDto(Guid Id, string SourceUrl, string ItemKey, Dictiona
 {
     public static ScrapedItemDto FromEntity(ScrapedItem i) => new(i.Id, i.SourceUrl, i.ItemKey, i.Data, i.CreatedAt);
 }
+
+public record TestExtractionRequest(
+    string Url,
+    ScrapeMode Mode,
+    string? ItemSelector,
+    List<FieldSelectorDto> Fields,
+    Guid? RateLimitPolicyId,
+    Guid? ScrapingProjectId,
+    RenderMode RenderMode);

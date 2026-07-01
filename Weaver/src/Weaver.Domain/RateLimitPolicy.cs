@@ -8,6 +8,7 @@ namespace Weaver.Domain;
 public class RateLimitPolicy
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OwnerUserId { get; set; }
     public string Name { get; set; } = string.Empty;
 
     public RateLimitKeyScope KeyScope { get; set; } = RateLimitKeyScope.PerHost;

@@ -87,10 +87,14 @@ public class ScrapeRunner
     private async Task<int> PersistItemsAndDetectChangesAsync(ScrapingProject project, ScrapeRun run, ScrapeResult result, CancellationToken cancellationToken)
     {
         var changedCount = 0;
+        var ordinalByUrl = new Dictionary<string, int>();
 
         foreach (var extracted in result.Items)
         {
-            var itemKey = ItemHasher.ComputeItemKey(extracted.Data, project.Fields);
+            var ordinal = ordinalByUrl.GetValueOrDefault(extracted.SourceUrl, 0);
+            ordinalByUrl[extracted.SourceUrl] = ordinal + 1;
+
+            var itemKey = ItemHasher.ComputeItemKey(extracted.Data, project.Fields, extracted.SourceUrl, ordinal);
             var contentHash = ItemHasher.ComputeContentHash(extracted.Data);
 
             var previous = await _db.ScrapedItems

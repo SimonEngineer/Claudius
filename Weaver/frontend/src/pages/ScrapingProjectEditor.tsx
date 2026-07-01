@@ -4,13 +4,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import { RateLimitPoliciesApi, ScrapingProjectsApi } from "../api/endpoints";
 import PagePicker, { type PickedElement } from "../components/PagePicker";
 import StatusPill from "../components/StatusPill";
-import type { FieldAttribute, FieldSelector, PaginationStrategy, ScrapeMode, UpsertScrapingProjectRequest } from "../types";
+import type { FieldAttribute, FieldSelector, PaginationStrategy, RenderMode, ScrapeMode, UpsertScrapingProjectRequest } from "../types";
 
 const emptyForm: UpsertScrapingProjectRequest = {
   name: "",
   description: "",
   startUrl: "",
   mode: "List",
+  renderMode: "Http",
   itemSelector: null,
   paginationStrategy: "None",
   nextPageSelector: null,
@@ -80,6 +81,19 @@ export default function ScrapingProjectEditor() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-project-runs", id] }),
   });
 
+  const testExtractMutation = useMutation({
+    mutationFn: () =>
+      ScrapingProjectsApi.testExtract({
+        url: previewUrl || form.startUrl,
+        mode: form.mode,
+        itemSelector: form.itemSelector,
+        fields: form.fields,
+        rateLimitPolicyId: form.rateLimitPolicyId,
+        scrapingProjectId: id ?? null,
+        renderMode: form.renderMode,
+      }),
+  });
+
   const addField = () => {
     const next: FieldSelector = {
       id: null,
@@ -147,11 +161,22 @@ export default function ScrapingProjectEditor() {
               Run now
             </button>
           )}
-          <button className="primary" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-            Save
+          <button
+            className="primary"
+            disabled={saveMutation.isPending || (!isNew && (existing.isLoading || existing.isError))}
+            title={!isNew && existing.isLoading ? "Waiting for the existing project to load…" : undefined}
+            onClick={() => saveMutation.mutate()}
+          >
+            {!isNew && existing.isLoading ? "Loading…" : "Save"}
           </button>
         </div>
       </div>
+
+      {!isNew && existing.isError && (
+        <p style={{ color: "var(--danger)" }}>
+          Failed to load this project -- editing and saving is disabled until it loads successfully. Try reloading the page.
+        </p>
+      )}
 
       <div className="split">
         <div style={{ overflow: "auto", paddingRight: 8 }}>
@@ -169,6 +194,18 @@ export default function ScrapingProjectEditor() {
                 >
                   <option value="List">List (repeating items)</option>
                   <option value="SingleItem">Single item (one page = one record)</option>
+                </select>
+              </div>
+              <div className="field">
+                <label title="Renders the page in headless Chromium first, for sites that build their content with JavaScript">
+                  Rendering
+                </label>
+                <select
+                  value={form.renderMode}
+                  onChange={(e) => setForm({ ...form, renderMode: e.target.value as RenderMode })}
+                >
+                  <option value="Http">Plain HTTP (fast)</option>
+                  <option value="Playwright">Rendered browser (for JS-heavy sites)</option>
                 </select>
               </div>
             </div>
@@ -291,8 +328,20 @@ export default function ScrapingProjectEditor() {
           <div className="card">
             <div className="page-header">
               <h3 style={{ margin: 0, fontSize: 14 }}>Fields to extract</h3>
-              <button onClick={addField}>+ Add field</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button disabled={testExtractMutation.isPending} onClick={() => testExtractMutation.mutate()}>
+                  {testExtractMutation.isPending ? "Testing…" : "Test extraction"}
+                </button>
+                <button onClick={addField}>+ Add field</button>
+              </div>
             </div>
+            {form.mode === "List" && form.fields.length > 0 && !form.fields.some((f) => f.isKey) && (
+              <p style={{ color: "var(--warn)", fontSize: 12, marginTop: 0 }}>
+                No field is marked as a Key. Without one, Weaver can't reliably tell "this item changed"
+                from "this is a new item" across runs -- mark a field with a stable value per item (e.g. a
+                detail URL or SKU) as Key so change-detection and price-drop style automations work.
+              </p>
+            )}
             <table>
               <thead>
                 <tr>
@@ -378,6 +427,38 @@ export default function ScrapingProjectEditor() {
               </tbody>
             </table>
             {form.fields.length === 0 && <p className="muted">No fields yet -- add one, then click "Pick" and click the element on the page.</p>}
+
+            {testExtractMutation.data && (
+              <div style={{ marginTop: 12 }}>
+                {testExtractMutation.data.errorMessage ? (
+                  <p style={{ color: "var(--danger)" }}>{testExtractMutation.data.errorMessage}</p>
+                ) : (
+                  <>
+                    <p className="muted">{testExtractMutation.data.itemsFound} item(s) extracted from this page (preview only, not saved):</p>
+                    <table>
+                      <thead>
+                        <tr>
+                          {form.fields.map((f) => (
+                            <th key={f.name}>{f.name}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {testExtractMutation.data.items.map((item, i) => (
+                          <tr key={i}>
+                            {form.fields.map((f) => (
+                              <td key={f.name} style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {item[f.name] ?? ""}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {!isNew && (
@@ -457,7 +538,14 @@ export default function ScrapingProjectEditor() {
             />
             <button onClick={() => setPreviewUrl(previewUrl)}>Reload</button>
           </div>
-          <PagePicker url={previewUrl} containerSelector={form.itemSelector} onPick={handlePick} />
+          <PagePicker
+            url={previewUrl}
+            containerSelector={form.itemSelector}
+            onPick={handlePick}
+            rateLimitPolicyId={form.rateLimitPolicyId}
+            scrapingProjectId={id}
+            renderMode={form.renderMode}
+          />
         </div>
       </div>
     </div>

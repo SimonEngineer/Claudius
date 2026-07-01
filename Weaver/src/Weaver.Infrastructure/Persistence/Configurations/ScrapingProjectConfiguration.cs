@@ -12,6 +12,7 @@ public class ScrapingProjectConfiguration : IEntityTypeConfiguration<ScrapingPro
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).IsRequired().HasMaxLength(200);
         builder.Property(x => x.StartUrl).IsRequired();
+        builder.HasIndex(x => x.OwnerUserId);
 
         builder.HasOne(x => x.RateLimitPolicy)
             .WithMany()
@@ -49,5 +50,6 @@ public class RateLimitPolicyConfiguration : IEntityTypeConfiguration<RateLimitPo
         builder.ToTable("rate_limit_policies");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).IsRequired().HasMaxLength(200);
+        builder.HasIndex(x => x.OwnerUserId);
     }
 }

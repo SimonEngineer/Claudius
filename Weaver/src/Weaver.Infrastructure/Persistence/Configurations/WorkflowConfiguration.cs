@@ -11,6 +11,7 @@ public class WorkflowConfiguration : IEntityTypeConfiguration<Workflow>
         builder.ToTable("workflows");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).IsRequired().HasMaxLength(200);
+        builder.HasIndex(x => x.OwnerUserId);
 
         builder.HasMany(x => x.Nodes)
             .WithOne()
