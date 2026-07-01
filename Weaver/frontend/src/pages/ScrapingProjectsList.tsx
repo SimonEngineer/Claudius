@@ -1,10 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ScrapingProjectsApi } from "../api/endpoints";
+import StatusPill from "../components/StatusPill";
+import { onRunStatusChanged } from "../realtime/runStatusConnection";
 
 export default function ScrapingProjectsList() {
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list });
+
+  useEffect(() => {
+    return onRunStatusChanged((event) => {
+      if (event.kind === "scrape") {
+        queryClient.invalidateQueries({ queryKey: ["scraping-projects"] });
+      }
+    });
+  }, [queryClient]);
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return projects.data;
+    return projects.data?.filter((p) => p.name.toLowerCase().includes(term) || p.startUrl.toLowerCase().includes(term));
+  }, [projects.data, search]);
 
   const runMutation = useMutation({
     mutationFn: ScrapingProjectsApi.run,
@@ -30,8 +47,17 @@ export default function ScrapingProjectsList() {
         </Link>
       </div>
 
+      {projects.data && projects.data.length > 0 && (
+        <input
+          placeholder="Search by name or URL…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ marginBottom: 12, width: "100%", maxWidth: 360 }}
+        />
+      )}
+
       <div className="card">
-        {projects.data?.length ? (
+        {filtered?.length ? (
           <table>
             <thead>
               <tr>
@@ -39,11 +65,12 @@ export default function ScrapingProjectsList() {
                 <th>Mode</th>
                 <th>Start URL</th>
                 <th>Status</th>
+                <th>Last run</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {projects.data.map((p) => (
+              {filtered.map((p) => (
                 <tr key={p.id}>
                   <td>
                     <Link to={`/scraping-projects/${p.id}`}>{p.name}</Link>
@@ -56,6 +83,15 @@ export default function ScrapingProjectsList() {
                     <span className={`pill ${p.isEnabled ? "Succeeded" : "Cancelled"}`}>
                       {p.isEnabled ? "enabled" : "disabled"}
                     </span>
+                  </td>
+                  <td>
+                    {p.lastRunStatus ? (
+                      <span title={p.lastRunAt ? new Date(p.lastRunAt).toLocaleString() : undefined}>
+                        <StatusPill status={p.lastRunStatus} />
+                      </span>
+                    ) : (
+                      <span className="muted">never run</span>
+                    )}
                   </td>
                   <td style={{ display: "flex", gap: 6 }}>
                     <button disabled={runMutation.isPending} onClick={() => runMutation.mutate(p.id)}>
@@ -78,7 +114,9 @@ export default function ScrapingProjectsList() {
             </tbody>
           </table>
         ) : (
-          <div className="empty-state">No scraping projects yet. Create one to get started.</div>
+          <div className="empty-state">
+            {search ? "No projects match your search." : "No scraping projects yet. Create one to get started."}
+          </div>
         )}
       </div>
     </div>

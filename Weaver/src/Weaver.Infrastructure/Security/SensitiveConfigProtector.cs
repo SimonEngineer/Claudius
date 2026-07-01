@@ -16,6 +16,11 @@ public interface ISensitiveConfigProtector
 {
     string EncryptForStorage(string nodeType, string configJson);
     string DecryptForUse(string nodeType, string configJson);
+
+    /// <summary>Blanks out sensitive fields entirely rather than decrypting them -- for a portable
+    /// workflow export file, which might be shared or committed to source control, and must never
+    /// carry a live credential in plaintext regardless of who ends up with a copy of it.</summary>
+    string RedactForExport(string nodeType, string configJson);
 }
 
 public class SensitiveConfigProtector : ISensitiveConfigProtector
@@ -38,6 +43,8 @@ public class SensitiveConfigProtector : ISensitiveConfigProtector
     public string EncryptForStorage(string nodeType, string configJson) => Transform(nodeType, configJson, Encrypt);
 
     public string DecryptForUse(string nodeType, string configJson) => Transform(nodeType, configJson, Decrypt);
+
+    public string RedactForExport(string nodeType, string configJson) => Transform(nodeType, configJson, _ => string.Empty);
 
     private static string Transform(string nodeType, string configJson, Func<string, string> fn)
     {

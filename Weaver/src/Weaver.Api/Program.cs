@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Weaver.Api.Realtime;
 using Weaver.Infrastructure;
 using Weaver.Infrastructure.Auth;
 using Weaver.Infrastructure.Persistence;
@@ -23,6 +24,8 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSignalR();
+builder.Services.AddHostedService<RunStatusRelayService>();
 
 builder.Services.AddWeaverInfrastructure(builder.Configuration);
 builder.Services.AddWeaverWorkflows(builder.Configuration);
@@ -44,7 +47,31 @@ builder.Services.AddCors(options =>
         .AllowAnyMethod());
 });
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+// A request authenticates with either a JWT (interactive frontend login) or a personal API key
+// (server-to-server automation, Authorization: Bearer wvr_...); the policy scheme below picks
+// which underlying handler actually runs based on the token's shape, so every existing endpoint
+// (already just checking User.GetUserId()) works unmodified with either credential type.
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = "Smart";
+    options.DefaultChallengeScheme = "Smart";
+})
+    .AddPolicyScheme("Smart", "JWT or API Key", policyOptions =>
+    {
+        policyOptions.ForwardDefaultSelector = context =>
+        {
+            var authHeader = context.Request.Headers.Authorization.ToString();
+            var token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? authHeader["Bearer ".Length..].Trim()
+                : authHeader;
+            return token.StartsWith(Weaver.Infrastructure.Auth.ApiKeyService.KeyPrefixLiteral, StringComparison.Ordinal)
+                ? Weaver.Api.Auth.ApiKeyAuthenticationHandler.SchemeName
+                : JwtBearerDefaults.AuthenticationScheme;
+        };
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, Weaver.Api.Auth.ApiKeyAuthenticationHandler>(
+        Weaver.Api.Auth.ApiKeyAuthenticationHandler.SchemeName, null)
+    .AddJwtBearer();
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
     .Configure<IOptions<JwtOptions>>((bearerOptions, jwtOptions) =>
     {
@@ -62,11 +89,14 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         bearerOptions.Events = new JwtBearerEvents
         {
             // The picker iframe's `src` GET can't carry an Authorization header, so /api/proxy
-            // uniquely accepts the token via ?access_token= instead (same pattern ASP.NET Core
-            // uses for SignalR's WebSocket handshake, for the same underlying reason).
+            // accepts the token via ?access_token= instead; the SignalR JS client does the same
+            // thing for its own transports (WebSocket/SSE can't set arbitrary headers either),
+            // sending the token the same way when configured with accessTokenFactory.
             OnMessageReceived = context =>
             {
-                if (context.Request.Path.StartsWithSegments("/api/proxy") && context.Request.Query.TryGetValue("access_token", out var token))
+                var isRealtimeHub = context.Request.Path.StartsWithSegments("/hubs");
+                if ((context.Request.Path.StartsWithSegments("/api/proxy") || isRealtimeHub)
+                    && context.Request.Query.TryGetValue("access_token", out var token))
                 {
                     context.Token = token;
                 }
@@ -125,6 +155,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 app.MapControllers();
+app.MapHub<RunStatusHub>("/hubs/run-status");
 app.MapHealthChecks("/health").AllowAnonymous();
 
 app.Run();

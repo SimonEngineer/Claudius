@@ -5,6 +5,7 @@ export type PaginationStrategy = "None" | "NextLinkSelector" | "UrlPattern";
 export type RateLimitKeyScope = "PerHost" | "PerUrl" | "PerProject" | "Custom";
 export type RunStatus = "Pending" | "Running" | "Succeeded" | "Failed" | "Cancelled" | "Skipped";
 export type TriggerKind = "Manual" | "Schedule" | "Http" | "Event" | "Code";
+export type AuditAction = "Created" | "Updated" | "Deleted";
 
 export interface FieldSelector {
   id: string | null;
@@ -37,9 +38,11 @@ export interface ScrapingProject {
   createdAt: string;
   updatedAt: string;
   fields: FieldSelector[];
+  lastRunStatus: RunStatus | null;
+  lastRunAt: string | null;
 }
 
-export type UpsertScrapingProjectRequest = Omit<ScrapingProject, "id" | "createdAt" | "updatedAt">;
+export type UpsertScrapingProjectRequest = Omit<ScrapingProject, "id" | "createdAt" | "updatedAt" | "lastRunStatus" | "lastRunAt">;
 
 export interface ScrapeRun {
   id: string;
@@ -70,6 +73,18 @@ export interface PagedResult<T> {
   pageSize: number;
 }
 
+export interface FieldDiff {
+  before: string | null;
+  after: string | null;
+}
+
+export interface ItemSnapshot {
+  id: string;
+  createdAt: string;
+  data: Record<string, string | null>;
+  changes: Record<string, FieldDiff> | null;
+}
+
 export interface TestExtractionResult {
   itemsFound: number;
   items: Record<string, string | null>[];
@@ -87,6 +102,28 @@ export interface RateLimitPolicy {
 }
 
 export type UpsertRateLimitPolicyRequest = Omit<RateLimitPolicy, "id">;
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface CreatedApiKey extends ApiKey {
+  key: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: AuditAction;
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  createdAt: string;
+}
 
 export interface WorkflowNode {
   id: string;
@@ -116,9 +153,11 @@ export interface Workflow {
   updatedAt: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  lastRunStatus: RunStatus | null;
+  lastRunAt: string | null;
 }
 
-export type UpsertWorkflowRequest = Omit<Workflow, "id" | "updatedAt">;
+export type UpsertWorkflowRequest = Omit<Workflow, "id" | "updatedAt" | "lastRunStatus" | "lastRunAt">;
 
 export interface WorkflowRun {
   id: string;

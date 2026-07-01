@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Infrastructure.Realtime;
 using Weaver.Infrastructure.Security;
 
 namespace Weaver.Workflows;
@@ -35,12 +36,14 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly INodeHandlerRegistry _registry;
     private readonly ILogger<WorkflowExecutionEngine> _logger;
+    private readonly IRunStatusPublisher _runStatus;
 
-    public WorkflowExecutionEngine(IServiceScopeFactory scopeFactory, INodeHandlerRegistry registry, ILogger<WorkflowExecutionEngine> logger)
+    public WorkflowExecutionEngine(IServiceScopeFactory scopeFactory, INodeHandlerRegistry registry, ILogger<WorkflowExecutionEngine> logger, IRunStatusPublisher runStatus)
     {
         _scopeFactory = scopeFactory;
         _registry = registry;
         _logger = logger;
+        _runStatus = runStatus;
     }
 
     public async Task<Guid> StartRunFromNodeAsync(
@@ -73,6 +76,7 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
         };
         db.WorkflowRuns.Add(run);
         await db.SaveChangesAsync(cancellationToken);
+        await _runStatus.PublishAsync(workflow.OwnerUserId, "workflow", run.Id, run.Status.ToString(), cancellationToken);
 
         var runFailed = false;
 
@@ -91,6 +95,7 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
         run.Status = runFailed ? RunStatus.Failed : RunStatus.Succeeded;
         run.CompletedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
+        await _runStatus.PublishAsync(workflow.OwnerUserId, "workflow", run.Id, run.Status.ToString(), cancellationToken);
 
         return run.Id;
     }

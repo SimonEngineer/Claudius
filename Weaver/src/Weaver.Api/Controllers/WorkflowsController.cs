@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Api.Dtos;
 using Weaver.Domain;
+using Weaver.Infrastructure.Auditing;
 using Weaver.Infrastructure.Persistence;
 using Weaver.Infrastructure.Security;
 using Weaver.Workflows;
@@ -16,13 +17,15 @@ public class WorkflowsController : ControllerBase
     private readonly IWorkflowExecutionEngine _engine;
     private readonly INodeHandlerRegistry _registry;
     private readonly ISensitiveConfigProtector _protector;
+    private readonly IAuditLogger _auditLogger;
 
-    public WorkflowsController(WeaverDbContext db, IWorkflowExecutionEngine engine, INodeHandlerRegistry registry, ISensitiveConfigProtector protector)
+    public WorkflowsController(WeaverDbContext db, IWorkflowExecutionEngine engine, INodeHandlerRegistry registry, ISensitiveConfigProtector protector, IAuditLogger auditLogger)
     {
         _db = db;
         _engine = engine;
         _registry = registry;
         _protector = protector;
+        _auditLogger = auditLogger;
     }
 
     private Guid UserId => User.GetUserId();
@@ -33,7 +36,18 @@ public class WorkflowsController : ControllerBase
         var workflows = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges)
             .Where(w => w.OwnerUserId == UserId)
             .OrderByDescending(w => w.UpdatedAt).ToListAsync(ct);
-        return workflows.Select(w => WorkflowDto.FromEntity(w, _protector)).ToList();
+
+        var workflowIds = workflows.Select(w => w.Id).ToArray();
+        var lastRuns = await _db.WorkflowRuns
+            .FromSqlInterpolated($@"SELECT DISTINCT ON (""WorkflowId"") * FROM workflow_runs WHERE ""WorkflowId"" = ANY({workflowIds}) ORDER BY ""WorkflowId"", ""CreatedAt"" DESC")
+            .ToListAsync(ct);
+        var lastRunByWorkflow = lastRuns.ToDictionary(r => r.WorkflowId);
+
+        return workflows.Select(w =>
+        {
+            var dto = WorkflowDto.FromEntity(w, _protector);
+            return lastRunByWorkflow.TryGetValue(w.Id, out var run) ? dto with { LastRunStatus = run.Status, LastRunAt = run.CreatedAt } : dto;
+        }).ToList();
     }
 
     [HttpGet("{id:guid}")]
@@ -50,6 +64,7 @@ public class WorkflowsController : ControllerBase
         ApplyGraph(workflow, request);
 
         _db.Workflows.Add(workflow);
+        _auditLogger.Record(UserId, AuditAction.Created, "Workflow", workflow.Id, workflow.Name);
         await _db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = workflow.Id }, WorkflowDto.FromEntity(workflow, _protector));
     }
@@ -75,6 +90,7 @@ public class WorkflowsController : ControllerBase
         workflow.Edges.Clear();
         ApplyGraph(workflow, request);
 
+        _auditLogger.Record(UserId, AuditAction.Updated, "Workflow", workflow.Id, workflow.Name);
         await _db.SaveChangesAsync(ct);
         return WorkflowDto.FromEntity(workflow, _protector);
     }
@@ -89,6 +105,7 @@ public class WorkflowsController : ControllerBase
         }
 
         _db.Workflows.Remove(workflow);
+        _auditLogger.Record(UserId, AuditAction.Deleted, "Workflow", workflow.Id, workflow.Name);
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
@@ -148,8 +165,97 @@ public class WorkflowsController : ControllerBase
         }
 
         _db.Workflows.Add(copy);
+        _auditLogger.Record(UserId, AuditAction.Created, "Workflow", copy.Id, copy.Name);
         await _db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = copy.Id }, WorkflowDto.FromEntity(copy, _protector));
+    }
+
+    /// <summary>Downloads a portable JSON snapshot of this workflow's graph -- sensitive config
+    /// fields (a Discord webhook URL, a webhook secret) are blanked out rather than decrypted, so
+    /// the file is safe to share or commit even though it does mean re-entering those after import.</summary>
+    [HttpGet("{id:guid}/export")]
+    public async Task<IActionResult> Export(Guid id, CancellationToken ct)
+    {
+        var workflow = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges).FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
+        if (workflow is null)
+        {
+            return NotFound();
+        }
+
+        var export = WorkflowExportDto.FromEntity(workflow, _protector);
+        var json = System.Text.Json.JsonSerializer.Serialize(export, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        });
+        var fileNameStem = string.Join("-", workflow.Name.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", $"{fileNameStem}.weaver-workflow.json");
+    }
+
+    /// <summary>
+    /// Creates a brand new workflow from a previously-exported file. Always created disabled (same
+    /// reasoning as Duplicate) and with fresh ids throughout -- the file's node Refs only need to be
+    /// unique within the file itself, so importing the same file twice, or into a different account,
+    /// never collides with anything.
+    /// </summary>
+    [HttpPost("import")]
+    public async Task<ActionResult<WorkflowDto>> Import(WorkflowExportDto request, CancellationToken ct)
+    {
+        if (request.WeaverExportVersion != WorkflowExportDto.CurrentVersion)
+        {
+            return BadRequest($"Unsupported export version {request.WeaverExportVersion} (expected {WorkflowExportDto.CurrentVersion}).");
+        }
+
+        var workflow = new Workflow
+        {
+            OwnerUserId = UserId,
+            Name = request.Name,
+            Description = request.Description,
+            IsEnabled = false,
+        };
+
+        var refMap = new Dictionary<string, Guid>();
+        foreach (var n in request.Nodes)
+        {
+            var newId = Guid.NewGuid();
+            refMap[n.Ref] = newId;
+            workflow.Nodes.Add(new WorkflowNode
+            {
+                Id = newId,
+                WorkflowId = workflow.Id,
+                Type = n.Type,
+                Name = n.Name,
+                ConfigJson = _protector.EncryptForStorage(n.Type, n.Config?.ToJsonString() ?? "{}"),
+                IsDisabled = n.IsDisabled,
+                MaxRetries = n.MaxRetries,
+                RetryDelayMs = n.RetryDelayMs <= 0 ? 1000 : n.RetryDelayMs,
+                PositionX = n.PositionX,
+                PositionY = n.PositionY,
+            });
+        }
+
+        foreach (var e in request.Edges)
+        {
+            if (!refMap.TryGetValue(e.SourceRef, out var sourceId) || !refMap.TryGetValue(e.TargetRef, out var targetId))
+            {
+                return BadRequest($"Edge references an unknown node ref ('{e.SourceRef}' -> '{e.TargetRef}').");
+            }
+
+            workflow.Edges.Add(new WorkflowEdge
+            {
+                Id = Guid.NewGuid(),
+                WorkflowId = workflow.Id,
+                SourceNodeId = sourceId,
+                SourceHandle = e.SourceHandle,
+                TargetNodeId = targetId,
+                TargetHandle = e.TargetHandle,
+            });
+        }
+
+        _db.Workflows.Add(workflow);
+        _auditLogger.Record(UserId, AuditAction.Created, "Workflow", workflow.Id, workflow.Name);
+        await _db.SaveChangesAsync(ct);
+        return CreatedAtAction(nameof(Get), new { id = workflow.Id }, WorkflowDto.FromEntity(workflow, _protector));
     }
 
     /// <summary>Manually fires a specific trigger node -- the workflow builder's "Run" button targets one node explicitly since a workflow may have several triggers.</summary>

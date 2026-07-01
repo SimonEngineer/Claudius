@@ -31,7 +31,9 @@ public record ScrapingProjectDto(
     bool IsEnabled,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    List<FieldSelectorDto> Fields)
+    List<FieldSelectorDto> Fields,
+    RunStatus? LastRunStatus = null,
+    DateTimeOffset? LastRunAt = null)
 {
     public static ScrapingProjectDto FromEntity(ScrapingProject p) => new(
         p.Id, p.Name, p.Description, p.StartUrl, p.Mode, p.RenderMode, p.ItemSelector, p.PaginationStrategy,
@@ -83,6 +85,10 @@ public record ScrapedItemDto(Guid Id, string SourceUrl, string ItemKey, Dictiona
 }
 
 public record PagedResult<T>(List<T> Items, int TotalCount, int Page, int PageSize);
+
+public record FieldDiffDto(string? Before, string? After);
+
+public record ItemSnapshotDto(Guid Id, DateTimeOffset CreatedAt, Dictionary<string, string?> Data, Dictionary<string, FieldDiffDto>? Changes);
 
 public record TestExtractionRequest(
     string Url,

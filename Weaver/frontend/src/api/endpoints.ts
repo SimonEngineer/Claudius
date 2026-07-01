@@ -1,7 +1,11 @@
 import { apiClient } from "./client";
 import { getStoredToken } from "../auth/tokenStorage";
 import type {
+  ApiKey,
+  AuditLogEntry,
+  CreatedApiKey,
   FieldSelector,
+  ItemSnapshot,
   NodeRun,
   PagedResult,
   RateLimitPolicy,
@@ -18,6 +22,19 @@ import type {
   WorkflowRun,
   WorkflowRunDetail,
 } from "../types";
+
+async function downloadFromApi(url: string, params: Record<string, string>, fallbackFilename: string) {
+  const response = await apiClient.get(url, { params, responseType: "blob" });
+  const disposition = response.headers["content-disposition"] as string | undefined;
+  const match = disposition?.match(/filename="?([^"]+)"?/);
+  const filename = match?.[1] ?? fallbackFilename;
+  const blobUrl = URL.createObjectURL(response.data as Blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(blobUrl);
+}
 
 export const ScrapingProjectsApi = {
   list: () => apiClient.get<ScrapingProject[]>("/api/scraping-projects").then((r) => r.data),
@@ -36,21 +53,12 @@ export const ScrapingProjectsApi = {
         params: { page, pageSize, ...(runId ? { runId } : {}) },
       })
       .then((r) => r.data),
-  exportItems: async (id: string, format: "csv" | "json", runId?: string) => {
-    const response = await apiClient.get(`/api/scraping-projects/${id}/items/export`, {
-      params: { format, ...(runId ? { runId } : {}) },
-      responseType: "blob",
-    });
-    const disposition = response.headers["content-disposition"] as string | undefined;
-    const match = disposition?.match(/filename="?([^"]+)"?/);
-    const filename = match?.[1] ?? `items.${format}`;
-    const url = URL.createObjectURL(response.data as Blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  },
+  exportItems: (id: string, format: "csv" | "json", runId?: string) =>
+    downloadFromApi(`/api/scraping-projects/${id}/items/export`, { format, ...(runId ? { runId } : {}) }, `items.${format}`),
+  itemHistory: (id: string, itemKey: string) =>
+    apiClient.get<ItemSnapshot[]>(`/api/scraping-projects/${id}/items/history/${encodeURIComponent(itemKey)}`).then((r) => r.data),
+  exportRuns: (id: string, format: "csv" | "json") =>
+    downloadFromApi(`/api/scraping-projects/${id}/runs/export`, { format }, `runs.${format}`),
   testExtract: (body: {
     url: string;
     mode: ScrapeMode;
@@ -61,6 +69,23 @@ export const ScrapingProjectsApi = {
     renderMode: RenderMode;
     customHeaders: Record<string, string>;
   }) => apiClient.post<TestExtractionResult>("/api/scraping-projects/test-extract", body).then((r) => r.data),
+};
+
+export const AuthApi = {
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiClient.post("/api/auth/change-password", { currentPassword, newPassword }),
+};
+
+export const ApiKeysApi = {
+  list: () => apiClient.get<ApiKey[]>("/api/api-keys").then((r) => r.data),
+  create: (name: string, expiresAt: string | null) =>
+    apiClient.post<CreatedApiKey>("/api/api-keys", { name, expiresAt }).then((r) => r.data),
+  remove: (id: string) => apiClient.delete(`/api/api-keys/${id}`),
+};
+
+export const AuditLogApi = {
+  list: (page = 1, pageSize = 50) =>
+    apiClient.get<PagedResult<AuditLogEntry>>("/api/audit-log", { params: { page, pageSize } }).then((r) => r.data),
 };
 
 export const RateLimitPoliciesApi = {
@@ -88,6 +113,10 @@ export const WorkflowsApi = {
   runDetail: (runId: string) =>
     apiClient.get<WorkflowRunDetail>(`/api/workflows/runs/${runId}`).then((r) => r.data),
   nodeTypes: () => apiClient.get<string[]>("/api/node-types").then((r) => r.data),
+  exportWorkflow: (id: string, name: string) =>
+    downloadFromApi(`/api/workflows/${id}/export`, {}, `${name}.weaver-workflow.json`),
+  importWorkflow: (fileContents: string) =>
+    apiClient.post<Workflow>("/api/workflows/import", JSON.parse(fileContents)).then((r) => r.data),
 };
 
 export type { NodeRun };

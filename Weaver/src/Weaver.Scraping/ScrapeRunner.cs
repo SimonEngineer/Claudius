@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Infrastructure.Realtime;
 
 namespace Weaver.Scraping;
 
@@ -24,12 +25,14 @@ public class ScrapeRunner
     private readonly WeaverDbContext _db;
     private readonly ScraperEngine _engine;
     private readonly IWorkflowEventPublisher _events;
+    private readonly IRunStatusPublisher _runStatus;
 
-    public ScrapeRunner(WeaverDbContext db, ScraperEngine engine, IWorkflowEventPublisher events)
+    public ScrapeRunner(WeaverDbContext db, ScraperEngine engine, IWorkflowEventPublisher events, IRunStatusPublisher runStatus)
     {
         _db = db;
         _engine = engine;
         _events = events;
+        _runStatus = runStatus;
     }
 
     public async Task<ScrapeRun> ExecuteAsync(Guid scrapingProjectId, TriggerKind triggeredBy, Guid? workflowRunId, CancellationToken cancellationToken = default)
@@ -50,6 +53,7 @@ public class ScrapeRunner
         };
         _db.ScrapeRuns.Add(run);
         await _db.SaveChangesAsync(cancellationToken);
+        await _runStatus.PublishAsync(project.OwnerUserId, "scrape", run.Id, run.Status.ToString(), cancellationToken);
 
         var result = await _engine.RunAsync(project, cancellationToken);
 
@@ -62,6 +66,7 @@ public class ScrapeRunner
             run.Status = RunStatus.Failed;
             run.ErrorMessage = result.ErrorMessage;
             await _db.SaveChangesAsync(cancellationToken);
+            await _runStatus.PublishAsync(project.OwnerUserId, "scrape", run.Id, run.Status.ToString(), cancellationToken);
             await _events.PublishAsync(RunFailedEvent, new { ScrapingProjectId = project.Id, RunId = run.Id, result.ErrorMessage }, cancellationToken);
             return run;
         }
@@ -71,6 +76,7 @@ public class ScrapeRunner
         run.Status = result.ErrorMessage is null ? RunStatus.Succeeded : RunStatus.Failed;
         run.ErrorMessage = result.ErrorMessage;
         await _db.SaveChangesAsync(cancellationToken);
+        await _runStatus.PublishAsync(project.OwnerUserId, "scrape", run.Id, run.Status.ToString(), cancellationToken);
 
         await _events.PublishAsync(RunCompletedEvent, new
         {

@@ -24,7 +24,9 @@ public record WorkflowEdgeDto(Guid Id, Guid SourceNodeId, string? SourceHandle, 
     public static WorkflowEdgeDto FromEntity(WorkflowEdge e) => new(e.Id, e.SourceNodeId, e.SourceHandle, e.TargetNodeId, e.TargetHandle);
 }
 
-public record WorkflowDto(Guid Id, string Name, string? Description, bool IsEnabled, DateTimeOffset UpdatedAt, List<WorkflowNodeDto> Nodes, List<WorkflowEdgeDto> Edges)
+public record WorkflowDto(
+    Guid Id, string Name, string? Description, bool IsEnabled, DateTimeOffset UpdatedAt, List<WorkflowNodeDto> Nodes, List<WorkflowEdgeDto> Edges,
+    RunStatus? LastRunStatus = null, DateTimeOffset? LastRunAt = null)
 {
     public static WorkflowDto FromEntity(Workflow w, ISensitiveConfigProtector protector) => new(
         w.Id, w.Name, w.Description, w.IsEnabled, w.UpdatedAt,
@@ -57,3 +59,31 @@ public record NodeRunDto(
 }
 
 public record WorkflowRunDetailDto(WorkflowRunDto Run, List<NodeRunDto> NodeRuns);
+
+/// <summary>Portable node record for a workflow export file. "Ref" is a string identifier that's
+/// only meaningful within the file itself (edges point at nodes by Ref, not by database id) --
+/// importing generates fresh real ids so the same file can be imported repeatedly, or into a
+/// different account, without colliding with anything.</summary>
+public record WorkflowExportNodeDto(
+    string Ref, string Type, string Name, System.Text.Json.Nodes.JsonNode? Config,
+    bool IsDisabled, int MaxRetries, int RetryDelayMs, double PositionX, double PositionY);
+
+public record WorkflowExportEdgeDto(string SourceRef, string? SourceHandle, string TargetRef, string? TargetHandle);
+
+public record WorkflowExportDto(
+    int WeaverExportVersion, string Name, string? Description, List<WorkflowExportNodeDto> Nodes, List<WorkflowExportEdgeDto> Edges)
+{
+    public const int CurrentVersion = 1;
+
+    public static WorkflowExportDto FromEntity(Workflow w, ISensitiveConfigProtector protector) => new(
+        CurrentVersion, w.Name, w.Description,
+        w.Nodes.Select(n =>
+        {
+            var redactedJson = string.IsNullOrWhiteSpace(n.ConfigJson) ? null : protector.RedactForExport(n.Type, n.ConfigJson);
+            return new WorkflowExportNodeDto(
+                n.Id.ToString(), n.Type, n.Name,
+                redactedJson is null ? null : System.Text.Json.Nodes.JsonNode.Parse(redactedJson),
+                n.IsDisabled, n.MaxRetries, n.RetryDelayMs, n.PositionX, n.PositionY);
+        }).ToList(),
+        w.Edges.Select(e => new WorkflowExportEdgeDto(e.SourceNodeId.ToString(), e.SourceHandle, e.TargetNodeId.ToString(), e.TargetHandle)).ToList());
+}

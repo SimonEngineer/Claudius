@@ -1,13 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Fragment, useEffect, useState } from "react";
 import { WorkflowsApi } from "../api/endpoints";
 import StatusPill from "./StatusPill";
+import { formatDuration } from "../utils/duration";
+import { onRunStatusChanged } from "../realtime/runStatusConnection";
 
 export default function WorkflowRunHistory({ workflowId }: { workflowId: string }) {
+  const queryClient = useQueryClient();
   const runs = useQuery({
     queryKey: ["workflow-runs", workflowId],
     queryFn: () => WorkflowsApi.runs(workflowId),
-    refetchInterval: 3000,
+    // SignalR pushes an update the moment a run's status actually changes; this is just the
+    // fallback for a dropped/reconnecting connection, so it can be much less frequent than before.
+    refetchInterval: 20000,
   });
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -16,6 +21,16 @@ export default function WorkflowRunHistory({ workflowId }: { workflowId: string 
     queryFn: () => WorkflowsApi.runDetail(expanded!),
     enabled: !!expanded,
   });
+
+  useEffect(() => {
+    return onRunStatusChanged((event) => {
+      if (event.kind === "workflow") {
+        queryClient.invalidateQueries({ queryKey: ["workflow-runs", workflowId] });
+        queryClient.invalidateQueries({ queryKey: ["workflow-run-detail", event.runId] });
+        queryClient.invalidateQueries({ queryKey: ["workflows"] });
+      }
+    });
+  }, [workflowId, queryClient]);
 
   return (
     <div className="card">
@@ -27,6 +42,7 @@ export default function WorkflowRunHistory({ workflowId }: { workflowId: string 
               <th>Status</th>
               <th>Trigger</th>
               <th>Started</th>
+              <th>Duration</th>
               <th></th>
             </tr>
           </thead>
@@ -41,6 +57,7 @@ export default function WorkflowRunHistory({ workflowId }: { workflowId: string 
                     {r.triggerKind} {r.triggerNodeType ? `(${r.triggerNodeType})` : ""}
                   </td>
                   <td className="muted">{r.startedAt ? new Date(r.startedAt).toLocaleString() : "-"}</td>
+                  <td className="muted">{formatDuration(r.startedAt, r.completedAt) ?? "-"}</td>
                   <td>
                     <button onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
                       {expanded === r.id ? "Hide" : "Details"}
@@ -49,14 +66,21 @@ export default function WorkflowRunHistory({ workflowId }: { workflowId: string 
                 </tr>
                 {expanded === r.id && (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={5}>
                       {detail.data ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {detail.data.nodeRuns.map((nr) => (
                             <div key={nr.id} className="card" style={{ margin: 0 }}>
                               <div className="page-header" style={{ marginBottom: 6 }}>
                                 <strong style={{ fontSize: 12 }}>{nr.nodeType}</strong>
-                                <StatusPill status={nr.status} />
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  {formatDuration(nr.startedAt, nr.completedAt) && (
+                                    <span className="muted" style={{ fontSize: 12 }}>
+                                      {formatDuration(nr.startedAt, nr.completedAt)}
+                                    </span>
+                                  )}
+                                  <StatusPill status={nr.status} />
+                                </div>
                               </div>
                               {nr.errorMessage && <p style={{ color: "var(--danger)" }}>{nr.errorMessage}</p>}
                               {nr.logText && <pre className="mono muted">{nr.logText}</pre>}

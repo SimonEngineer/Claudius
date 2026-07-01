@@ -122,7 +122,14 @@ export default function RateLimitPolicies() {
                   <td>{p.windowSeconds}s</td>
                   <td>{p.burstCapacity}</td>
                   <td>
-                    <button className="danger" onClick={() => deleteMutation.mutate(p.id)}>
+                    <button
+                      className="danger"
+                      onClick={() => {
+                        if (confirm(`Delete "${p.name}"? Scraping projects using it will fall back to unthrottled requests.`)) {
+                          deleteMutation.mutate(p.id);
+                        }
+                      }}
+                    >
                       Delete
                     </button>
                   </td>

@@ -61,6 +61,24 @@ export const NODE_CATALOG: NodeCatalogEntry[] = [
     description: "Append to a csv/json/txt file",
     defaultConfig: { filePath: "", format: "json" },
   },
+  {
+    type: "action.httpRequest",
+    label: "HTTP Request",
+    description: "Call any HTTP API",
+    defaultConfig: { method: "GET", url: "", headers: {}, body: "", timeoutSeconds: 30 },
+  },
+  {
+    type: "action.delay",
+    label: "Delay",
+    description: "Pause the run for N seconds",
+    defaultConfig: { seconds: 5 },
+  },
+  {
+    type: "action.splitIntoBatches",
+    label: "Split into Batches",
+    description: "Chunk an array into fixed-size batches",
+    defaultConfig: { arrayPath: "", batchSize: 10 },
+  },
 ];
 
 export const catalogEntry = (type: string) => NODE_CATALOG.find((n) => n.type === type);

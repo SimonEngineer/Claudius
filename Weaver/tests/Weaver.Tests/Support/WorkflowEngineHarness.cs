@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Infrastructure.Realtime;
 using Weaver.Workflows;
 using Weaver.Workflows.Nodes;
 
@@ -29,7 +30,14 @@ public class WorkflowEngineHarness
         Engine = new WorkflowExecutionEngine(
             new ScopeFactoryWithProtector(_provider),
             registry,
-            NullLogger<WorkflowExecutionEngine>.Instance);
+            NullLogger<WorkflowExecutionEngine>.Instance,
+            new NoOpRunStatusPublisher());
+    }
+
+    private class NoOpRunStatusPublisher : IRunStatusPublisher
+    {
+        public Task PublishAsync(Guid ownerUserId, string kind, Guid runId, string status, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     public void Seed(Action<WeaverDbContext> seed)

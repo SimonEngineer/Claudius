@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Api.Dtos;
 using Weaver.Domain;
+using Weaver.Infrastructure.Auditing;
 using Weaver.Infrastructure.Persistence;
 using Weaver.Infrastructure.Queue;
 using Weaver.Scraping;
@@ -16,12 +17,14 @@ public class ScrapingProjectsController : ControllerBase
     private readonly WeaverDbContext _db;
     private readonly IScrapeJobQueue _queue;
     private readonly TestExtractionService _testExtraction;
+    private readonly IAuditLogger _auditLogger;
 
-    public ScrapingProjectsController(WeaverDbContext db, IScrapeJobQueue queue, TestExtractionService testExtraction)
+    public ScrapingProjectsController(WeaverDbContext db, IScrapeJobQueue queue, TestExtractionService testExtraction, IAuditLogger auditLogger)
     {
         _testExtraction = testExtraction;
         _db = db;
         _queue = queue;
+        _auditLogger = auditLogger;
     }
 
     private Guid UserId => User.GetUserId();
@@ -32,7 +35,20 @@ public class ScrapingProjectsController : ControllerBase
         var projects = await _db.ScrapingProjects.Include(p => p.Fields)
             .Where(p => p.OwnerUserId == UserId)
             .OrderByDescending(p => p.UpdatedAt).ToListAsync(ct);
-        return projects.Select(ScrapingProjectDto.FromEntity).ToList();
+
+        var projectIds = projects.Select(p => p.Id).ToArray();
+        // DISTINCT ON is the idiomatic Postgres way to get one (the latest) row per group without
+        // an N+1 query per project or fetching every run ever recorded just to keep the newest.
+        var lastRuns = await _db.ScrapeRuns
+            .FromSqlInterpolated($@"SELECT DISTINCT ON (""ScrapingProjectId"") * FROM scrape_runs WHERE ""ScrapingProjectId"" = ANY({projectIds}) ORDER BY ""ScrapingProjectId"", ""CreatedAt"" DESC")
+            .ToListAsync(ct);
+        var lastRunByProject = lastRuns.ToDictionary(r => r.ScrapingProjectId);
+
+        return projects.Select(p =>
+        {
+            var dto = ScrapingProjectDto.FromEntity(p);
+            return lastRunByProject.TryGetValue(p.Id, out var run) ? dto with { LastRunStatus = run.Status, LastRunAt = run.CreatedAt } : dto;
+        }).ToList();
     }
 
     [HttpGet("{id:guid}")]
@@ -71,6 +87,7 @@ public class ScrapingProjectsController : ControllerBase
         ApplyFields(project, request.Fields);
 
         _db.ScrapingProjects.Add(project);
+        _auditLogger.Record(UserId, AuditAction.Created, "ScrapingProject", project.Id, project.Name);
         await _db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = project.Id }, ScrapingProjectDto.FromEntity(project));
     }
@@ -109,6 +126,7 @@ public class ScrapingProjectsController : ControllerBase
         project.Fields.Clear();
         ApplyFields(project, request.Fields);
 
+        _auditLogger.Record(UserId, AuditAction.Updated, "ScrapingProject", project.Id, project.Name);
         await _db.SaveChangesAsync(ct);
         return ScrapingProjectDto.FromEntity(project);
     }
@@ -123,6 +141,7 @@ public class ScrapingProjectsController : ControllerBase
         }
 
         _db.ScrapingProjects.Remove(project);
+        _auditLogger.Record(UserId, AuditAction.Deleted, "ScrapingProject", project.Id, project.Name);
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
@@ -171,6 +190,7 @@ public class ScrapingProjectsController : ControllerBase
         }
 
         _db.ScrapingProjects.Add(copy);
+        _auditLogger.Record(UserId, AuditAction.Created, "ScrapingProject", copy.Id, copy.Name);
         await _db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = copy.Id }, ScrapingProjectDto.FromEntity(copy));
     }
@@ -206,6 +226,29 @@ public class ScrapingProjectsController : ControllerBase
 
         var runs = await _db.ScrapeRuns.Where(r => r.ScrapingProjectId == id).OrderByDescending(r => r.CreatedAt).Take(50).ToListAsync(ct);
         return runs.Select(ScrapeRunDto.FromEntity).ToList();
+    }
+
+    /// <summary>Downloads this project's run history (not capped at 50, unlike the list view) as CSV or JSON.</summary>
+    [HttpGet("{id:guid}/runs/export")]
+    public async Task<IActionResult> ExportRuns(Guid id, [FromQuery] string format = "csv", CancellationToken ct = default)
+    {
+        var project = await _db.ScrapingProjects.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        var runs = await _db.ScrapeRuns.Where(r => r.ScrapingProjectId == id).OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
+        var fileNameStem = string.Join("-", project.Name.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            var json = JsonSerializer.Serialize(runs.Select(ScrapeRunDto.FromEntity), new JsonSerializerOptions { WriteIndented = true });
+            return File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", $"{fileNameStem}-runs.json");
+        }
+
+        var csv = ScrapeRunsCsvWriter.Write(runs);
+        return File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", $"{fileNameStem}-runs.csv");
     }
 
     [HttpGet("{id:guid}/items")]
@@ -252,6 +295,57 @@ public class ScrapingProjectsController : ControllerBase
 
         var json = JsonSerializer.Serialize(items.Select(ScrapedItemDto.FromEntity), new JsonSerializerOptions { WriteIndented = true });
         return File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", $"{fileNameStem}-items.json");
+    }
+
+    /// <summary>
+    /// Every scrape run keeps its own ScrapedItem row rather than overwriting the last one, so an
+    /// item's full history (by ItemKey, its stable cross-run identity) is already sitting in the
+    /// table -- this just surfaces it, oldest first, with a field-by-field diff against whatever
+    /// snapshot came right before each one (the "what actually changed" view behind a price-drop
+    /// alert, made visible instead of only ever firing silently into a workflow).
+    /// </summary>
+    [HttpGet("{id:guid}/items/history/{itemKey}")]
+    public async Task<ActionResult<List<ItemSnapshotDto>>> ItemHistory(Guid id, string itemKey, CancellationToken ct)
+    {
+        if (!await _db.ScrapingProjects.AnyAsync(p => p.Id == id && p.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
+        var snapshots = await _db.ScrapedItems
+            .Where(i => i.ScrapingProjectId == id && i.ItemKey == itemKey)
+            .OrderBy(i => i.CreatedAt)
+            .ToListAsync(ct);
+
+        if (snapshots.Count == 0)
+        {
+            return NotFound();
+        }
+
+        var result = new List<ItemSnapshotDto>();
+        Dictionary<string, string?>? previousData = null;
+        foreach (var snapshot in snapshots)
+        {
+            Dictionary<string, FieldDiffDto>? changes = null;
+            if (previousData is not null)
+            {
+                changes = new Dictionary<string, FieldDiffDto>();
+                foreach (var key in previousData.Keys.Union(snapshot.Data.Keys))
+                {
+                    var before = previousData.GetValueOrDefault(key);
+                    var after = snapshot.Data.GetValueOrDefault(key);
+                    if (before != after)
+                    {
+                        changes[key] = new FieldDiffDto(before, after);
+                    }
+                }
+            }
+
+            result.Add(new ItemSnapshotDto(snapshot.Id, snapshot.CreatedAt, snapshot.Data, changes));
+            previousData = snapshot.Data;
+        }
+
+        return result;
     }
 
     /// <summary>Runs the given (not-yet-saved) selectors against one live page and returns what they'd extract, without persisting anything -- for iterating on selectors before committing to a real run.</summary>

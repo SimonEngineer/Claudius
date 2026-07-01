@@ -10,6 +10,8 @@ public class WeaverDbContext : DbContext
     }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
 
     public DbSet<ScrapingProject> ScrapingProjects => Set<ScrapingProject>();
     public DbSet<FieldSelector> FieldSelectors => Set<FieldSelector>();

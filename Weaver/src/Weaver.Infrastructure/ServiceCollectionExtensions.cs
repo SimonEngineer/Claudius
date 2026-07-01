@@ -4,10 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
+using Weaver.Infrastructure.Auditing;
 using Weaver.Infrastructure.Auth;
 using Weaver.Infrastructure.Persistence;
 using Weaver.Infrastructure.Queue;
 using Weaver.Infrastructure.RateLimiting;
+using Weaver.Infrastructure.Realtime;
 using Weaver.Infrastructure.Security;
 
 namespace Weaver.Infrastructure;
@@ -54,6 +56,9 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPasswordHashingService, PasswordHashingService>();
         services.AddScoped<ITokenService, TokenService>();
+        services.AddSingleton<IApiKeyService, ApiKeyService>();
+        services.AddScoped<IAuditLogger, AuditLogger>();
+        services.AddSingleton<IRunStatusPublisher, RunStatusPublisher>();
 
         services.AddHealthChecks()
             .AddCheck<PostgresHealthCheck>("postgres")

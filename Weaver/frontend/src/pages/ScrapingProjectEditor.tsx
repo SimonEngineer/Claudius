@@ -4,7 +4,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { RateLimitPoliciesApi, ScrapingProjectsApi } from "../api/endpoints";
 import PagePicker, { type PickedElement } from "../components/PagePicker";
 import StatusPill from "../components/StatusPill";
+import ItemHistoryModal from "../components/ItemHistoryModal";
 import type { FieldAttribute, FieldSelector, PaginationStrategy, RenderMode, ScrapeMode, UpsertScrapingProjectRequest } from "../types";
+import { formatDuration } from "../utils/duration";
+import { onRunStatusChanged } from "../realtime/runStatusConnection";
 
 const emptyForm: UpsertScrapingProjectRequest = {
   name: "",
@@ -49,8 +52,21 @@ export default function ScrapingProjectEditor() {
     queryKey: ["scraping-project-runs", id],
     queryFn: () => ScrapingProjectsApi.runs(id!),
     enabled: !isNew,
-    refetchInterval: 3000,
+    // SignalR pushes an update the moment a run's status actually changes; this is just the
+    // fallback for a dropped/reconnecting connection, so it can be much less frequent than before.
+    refetchInterval: 20000,
   });
+
+  useEffect(() => {
+    if (isNew) return;
+    return onRunStatusChanged((event) => {
+      if (event.kind === "scrape") {
+        queryClient.invalidateQueries({ queryKey: ["scraping-project-runs", id] });
+        queryClient.invalidateQueries({ queryKey: ["scraping-project-items", id] });
+        queryClient.invalidateQueries({ queryKey: ["scraping-projects"] });
+      }
+    });
+  }, [isNew, id, queryClient]);
   const [itemsPage, setItemsPage] = useState(1);
   const itemsPageSize = 20;
   const items = useQuery({
@@ -60,6 +76,7 @@ export default function ScrapingProjectEditor() {
   });
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportError, setExportError] = useState<string | null>(null);
+  const [historyItemKey, setHistoryItemKey] = useState<string | null>(null);
 
   const [form, setForm] = useState<UpsertScrapingProjectRequest>(emptyForm);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -68,7 +85,7 @@ export default function ScrapingProjectEditor() {
 
   useEffect(() => {
     if (existing.data) {
-      const { id: _omit, createdAt: _c, updatedAt: _u, ...rest } = existing.data;
+      const { id: _omit, createdAt: _c, updatedAt: _u, lastRunStatus: _lrs, lastRunAt: _lra, ...rest } = existing.data;
       setForm(rest);
       setPreviewUrl(rest.startUrl);
       setHeaderRows(Object.entries(rest.customHeaders).map(([key, value]) => ({ key, value })));
@@ -135,6 +152,17 @@ export default function ScrapingProjectEditor() {
 
   const removeField = (index: number) => {
     setForm({ ...form, fields: form.fields.filter((_, i) => i !== index) });
+  };
+
+  const moveField = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= form.fields.length) return;
+
+    const reordered = [...form.fields];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    // Extraction runs fields in Order, so the array position and the persisted Order must
+    // stay in lockstep -- otherwise a reorder here wouldn't actually change extraction order.
+    setForm({ ...form, fields: reordered.map((f, i) => ({ ...f, order: i })) });
   };
 
   const handlePick = useCallback(
@@ -499,7 +527,13 @@ export default function ScrapingProjectEditor() {
                         onChange={(e) => updateField(i, { resolveUrl: e.target.checked })}
                       />
                     </td>
-                    <td>
+                    <td style={{ display: "flex", gap: 4 }}>
+                      <button disabled={i === 0} onClick={() => moveField(i, -1)} title="Move up">
+                        ↑
+                      </button>
+                      <button disabled={i === form.fields.length - 1} onClick={() => moveField(i, 1)} title="Move down">
+                        ↓
+                      </button>
                       <button className="danger" onClick={() => removeField(i)}>
                         ×
                       </button>
@@ -545,7 +579,15 @@ export default function ScrapingProjectEditor() {
 
           {!isNew && (
             <div className="card">
-              <h3 style={{ marginTop: 0, fontSize: 14 }}>Recent runs</h3>
+              <div className="page-header">
+                <h3 style={{ margin: 0, fontSize: 14 }}>Recent runs</h3>
+                {runs.data && runs.data.length > 0 && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => ScrapingProjectsApi.exportRuns(id!, "csv")}>Export CSV</button>
+                    <button onClick={() => ScrapingProjectsApi.exportRuns(id!, "json")}>Export JSON</button>
+                  </div>
+                )}
+              </div>
               {runs.data?.length ? (
                 <table>
                   <thead>
@@ -556,6 +598,7 @@ export default function ScrapingProjectEditor() {
                       <th>Items</th>
                       <th>Changed</th>
                       <th>Started</th>
+                      <th>Duration</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -569,6 +612,7 @@ export default function ScrapingProjectEditor() {
                         <td>{r.itemsFound}</td>
                         <td>{r.itemsChanged}</td>
                         <td className="muted">{r.startedAt ? new Date(r.startedAt).toLocaleString() : "-"}</td>
+                        <td className="muted">{formatDuration(r.startedAt, r.completedAt) ?? "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -609,6 +653,7 @@ export default function ScrapingProjectEditor() {
                     {itemColumns.map((c) => (
                       <th key={c}>{c}</th>
                     ))}
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -619,6 +664,9 @@ export default function ScrapingProjectEditor() {
                           {item.data[c] ?? ""}
                         </td>
                       ))}
+                      <td>
+                        <button onClick={() => setHistoryItemKey(item.itemKey)}>History</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -660,6 +708,10 @@ export default function ScrapingProjectEditor() {
           />
         </div>
       </div>
+
+      {historyItemKey && (
+        <ItemHistoryModal scrapingProjectId={id!} itemKey={historyItemKey} onClose={() => setHistoryItemKey(null)} />
+      )}
     </div>
   );
 }

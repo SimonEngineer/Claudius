@@ -11,10 +11,10 @@ namespace Weaver.Api.Controllers;
 public record RegisterRequest(string Email, string Password);
 public record LoginRequest(string Email, string Password);
 public record AuthResponse(string Token, Guid UserId, string Email);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
 [ApiController]
 [Route("api/auth")]
-[AllowAnonymous]
 [EnableRateLimiting("auth")]
 public class AuthController : ControllerBase
 {
@@ -29,6 +29,7 @@ public class AuthController : ControllerBase
         _tokenService = tokenService;
     }
 
+    [AllowAnonymous]
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request, CancellationToken ct)
     {
@@ -57,6 +58,7 @@ public class AuthController : ControllerBase
         return new AuthResponse(_tokenService.CreateToken(user), user.Id, user.Email);
     }
 
+    [AllowAnonymous]
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request, CancellationToken ct)
     {
@@ -68,5 +70,28 @@ public class AuthController : ControllerBase
         }
 
         return new AuthResponse(_tokenService.CreateToken(user), user.Id, user.Email);
+    }
+
+    /// <summary>Requires a valid JWT, unlike Register/Login which are individually [AllowAnonymous] --
+    /// note that [AllowAnonymous] anywhere in an endpoint's metadata (even at the controller level)
+    /// would disable auth for every action in this controller, so it must NOT sit on the class itself.</summary>
+    [HttpPost("change-password")]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
+        {
+            return BadRequest("New password must be at least 8 characters.");
+        }
+
+        var userId = User.GetUserId();
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null || !_passwordHashing.Verify(user, request.CurrentPassword))
+        {
+            return Unauthorized("Current password is incorrect.");
+        }
+
+        user.PasswordHash = _passwordHashing.Hash(user, request.NewPassword);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
     }
 }

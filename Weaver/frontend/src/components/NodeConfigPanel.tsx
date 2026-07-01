@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { ScrapingProjectsApi } from "../api/endpoints";
 import { apiBaseUrl } from "../api/client";
 
@@ -63,6 +64,7 @@ export default function NodeConfigPanel({
   const setConfig = (patch: Record<string, unknown>) => onChange({ config: { ...config, ...patch } });
   const scrapingProjects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list, enabled: nodeType === "action.scrape" });
   const isTrigger = nodeType.startsWith("trigger.");
+  const [copied, setCopied] = useState(false);
 
   return (
     <div className="card" style={{ position: "sticky", top: 0 }}>
@@ -93,10 +95,37 @@ export default function NodeConfigPanel({
       {nodeType === "trigger.http" && (
         <>
           <TextField label="Secret (optional)" value={(config.secret as string) ?? ""} onChange={(v) => setConfig({ secret: v })} />
+          <div className="field">
+            <label>
+              <input
+                type="checkbox"
+                checked={(config.hmacSignature as boolean) ?? false}
+                onChange={(e) => setConfig({ hmacSignature: e.target.checked })}
+                style={{ marginRight: 6 }}
+              />
+              Verify via HMAC-SHA256 signature instead of a raw header
+            </label>
+            <p className="muted" style={{ marginTop: 4 }}>
+              {config.hmacSignature
+                ? <>Sender computes HMAC-SHA256 of the raw request body using Secret as the key, and sends it as <code>X-Weaver-Signature: sha256=&lt;hex&gt;</code> -- the secret itself never goes over the wire.</>
+                : <>Sender sends Secret verbatim in the <code>X-Weaver-Secret</code> header.</>}
+            </p>
+          </div>
           {workflowId && (
             <div className="field">
               <label>Webhook URL</label>
-              <input className="mono" readOnly value={`${apiBaseUrl}/api/webhooks/${workflowId}/${nodeId}`} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <input className="mono" readOnly value={`${apiBaseUrl}/api/webhooks/${workflowId}/${nodeId}`} />
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${apiBaseUrl}/api/webhooks/${workflowId}/${nodeId}`);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  }}
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
             </div>
           )}
         </>
@@ -215,6 +244,112 @@ export default function NodeConfigPanel({
             label="Timeout (seconds)"
             value={String((config.timeoutSeconds as number) ?? 30)}
             onChange={(v) => setConfig({ timeoutSeconds: Number(v) || 30 })}
+          />
+        </>
+      )}
+
+      {nodeType === "action.httpRequest" && (
+        <>
+          <div className="row">
+            <div className="field">
+              <label>Method</label>
+              <select value={(config.method as string) ?? "GET"} onChange={(e) => setConfig({ method: e.target.value })}>
+                <option>GET</option>
+                <option>POST</option>
+                <option>PUT</option>
+                <option>PATCH</option>
+                <option>DELETE</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Timeout (seconds)</label>
+              <input
+                type="number"
+                min={1}
+                value={(config.timeoutSeconds as number) ?? 30}
+                onChange={(e) => setConfig({ timeoutSeconds: Number(e.target.value) || 30 })}
+              />
+            </div>
+          </div>
+
+          <TextField
+            label="URL"
+            mono
+            value={(config.url as string) ?? ""}
+            onChange={(v) => setConfig({ url: v })}
+            placeholder="https://api.example.com/{{Input.id}}"
+          />
+
+          <div className="field">
+            <label>Headers</label>
+            {Object.entries((config.headers as Record<string, string>) ?? {}).map(([key, value], i) => (
+              <div key={i} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                <input
+                  className="mono"
+                  placeholder="Name"
+                  value={key}
+                  onChange={(e) => {
+                    const entries = Object.entries((config.headers as Record<string, string>) ?? {});
+                    entries[i] = [e.target.value, entries[i][1]];
+                    setConfig({ headers: Object.fromEntries(entries) });
+                  }}
+                />
+                <input
+                  className="mono"
+                  placeholder="Value"
+                  value={value}
+                  onChange={(e) => {
+                    const entries = Object.entries((config.headers as Record<string, string>) ?? {});
+                    entries[i] = [entries[i][0], e.target.value];
+                    setConfig({ headers: Object.fromEntries(entries) });
+                  }}
+                />
+                <button
+                  className="danger"
+                  onClick={() => {
+                    const entries = Object.entries((config.headers as Record<string, string>) ?? {}).filter((_, ri) => ri !== i);
+                    setConfig({ headers: Object.fromEntries(entries) });
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button onClick={() => setConfig({ headers: { ...((config.headers as Record<string, string>) ?? {}), "": "" } })}>
+              + Add header
+            </button>
+          </div>
+
+          <TextAreaField
+            label="Body (optional)"
+            value={(config.body as string) ?? ""}
+            onChange={(v) => setConfig({ body: v })}
+            hint="Template-rendered like other fields. Sent as-is for POST/PUT/PATCH; ignored for GET/HEAD. A 'Content-Type' header above controls how it's labeled (defaults to application/json)."
+          />
+        </>
+      )}
+
+      {nodeType === "action.delay" && (
+        <TextField
+          label="Seconds"
+          value={String((config.seconds as number) ?? 5)}
+          onChange={(v) => setConfig({ seconds: Math.max(0, Number(v) || 0) })}
+        />
+      )}
+
+      {nodeType === "action.splitIntoBatches" && (
+        <>
+          <TextField
+            label="Array path (optional)"
+            mono
+            value={(config.arrayPath as string) ?? ""}
+            onChange={(v) => setConfig({ arrayPath: v })}
+            placeholder="e.g. Scrape Fixture.items -- leave blank to use this node's whole input"
+          />
+          <TextField
+            label="Batch size"
+            value={String((config.batchSize as number) ?? 10)}
+            onChange={(v) => setConfig({ batchSize: Math.max(1, Number(v) || 1) })}
           />
         </>
       )}

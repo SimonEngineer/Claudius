@@ -5,6 +5,8 @@ import ScrapingProjectEditor from "./pages/ScrapingProjectEditor";
 import WorkflowsList from "./pages/WorkflowsList";
 import WorkflowEditor from "./pages/WorkflowEditor";
 import RateLimitPolicies from "./pages/RateLimitPolicies";
+import Activity from "./pages/Activity";
+import Account from "./pages/Account";
 import Login from "./pages/Login";
 import { useAuth } from "./auth/AuthContext";
 
@@ -30,11 +32,14 @@ function AppShell() {
           <NavLink to="/rate-limits" className={({ isActive }) => (isActive ? "active" : "")}>
             Rate Limits
           </NavLink>
+          <NavLink to="/activity" className={({ isActive }) => (isActive ? "active" : "")}>
+            Activity
+          </NavLink>
         </nav>
         <div style={{ marginTop: "auto", paddingTop: 16 }}>
-          <p className="muted" style={{ margin: "0 8px 8px", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {user?.email}
-          </p>
+          <NavLink to="/account" className={({ isActive }) => `navlink${isActive ? " active" : ""}`}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{user?.email}</span>
+          </NavLink>
           <div className="navlink" onClick={logout}>
             Log out
           </div>
@@ -50,6 +55,8 @@ function AppShell() {
           <Route path="/workflows/new" element={<WorkflowEditor />} />
           <Route path="/workflows/:id" element={<WorkflowEditor />} />
           <Route path="/rate-limits" element={<RateLimitPolicies />} />
+          <Route path="/activity" element={<Activity />} />
+          <Route path="/account" element={<Account />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

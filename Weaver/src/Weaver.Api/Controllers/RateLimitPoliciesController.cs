@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Domain;
+using Weaver.Infrastructure.Auditing;
 using Weaver.Infrastructure.Persistence;
 
 namespace Weaver.Api.Controllers;
@@ -17,10 +18,12 @@ public record UpsertRateLimitPolicyRequest(string Name, RateLimitKeyScope KeySco
 public class RateLimitPoliciesController : ControllerBase
 {
     private readonly WeaverDbContext _db;
+    private readonly IAuditLogger _auditLogger;
 
-    public RateLimitPoliciesController(WeaverDbContext db)
+    public RateLimitPoliciesController(WeaverDbContext db, IAuditLogger auditLogger)
     {
         _db = db;
+        _auditLogger = auditLogger;
     }
 
     private Guid UserId => User.GetUserId();
@@ -46,6 +49,7 @@ public class RateLimitPoliciesController : ControllerBase
             BurstCapacity = request.BurstCapacity,
         };
         _db.RateLimitPolicies.Add(policy);
+        _auditLogger.Record(UserId, AuditAction.Created, "RateLimitPolicy", policy.Id, policy.Name);
         await _db.SaveChangesAsync(ct);
         return RateLimitPolicyDto.FromEntity(policy);
     }
@@ -66,6 +70,7 @@ public class RateLimitPoliciesController : ControllerBase
         policy.WindowSeconds = request.WindowSeconds;
         policy.BurstCapacity = request.BurstCapacity;
 
+        _auditLogger.Record(UserId, AuditAction.Updated, "RateLimitPolicy", policy.Id, policy.Name);
         await _db.SaveChangesAsync(ct);
         return RateLimitPolicyDto.FromEntity(policy);
     }
@@ -80,6 +85,7 @@ public class RateLimitPoliciesController : ControllerBase
         }
 
         _db.RateLimitPolicies.Remove(policy);
+        _auditLogger.Record(UserId, AuditAction.Deleted, "RateLimitPolicy", policy.Id, policy.Name);
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }

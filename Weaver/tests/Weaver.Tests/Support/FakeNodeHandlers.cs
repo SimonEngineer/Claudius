@@ -67,4 +67,5 @@ public class PassthroughSensitiveConfigProtector : ISensitiveConfigProtector
 {
     public string EncryptForStorage(string nodeType, string configJson) => configJson;
     public string DecryptForUse(string nodeType, string configJson) => configJson;
+    public string RedactForExport(string nodeType, string configJson) => configJson;
 }

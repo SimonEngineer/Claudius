@@ -46,15 +46,17 @@ a { color: var(--accent-2); text-decoration: none; }
 
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
 
-.sidebar nav a, .sidebar nav .navlink {
+.sidebar nav a, .sidebar .navlink {
+  display: block;
   padding: 8px 10px;
   border-radius: 6px;
   color: var(--text-dim);
   font-size: 14px;
   cursor: pointer;
+  text-decoration: none;
 }
 
-.sidebar nav a.active, .sidebar nav a:hover {
+.sidebar nav a.active, .sidebar nav a:hover, .sidebar .navlink.active, .sidebar .navlink:hover {
   background: var(--panel-2);
   color: var(--text);
 }
