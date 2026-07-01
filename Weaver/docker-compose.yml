@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: weaver
+      POSTGRES_USER: weaver
+      POSTGRES_PASSWORD: weaver
+    volumes:
+      - weaver-pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weaver"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Database=weaver;Username=weaver;Password=weaver"
+      ConnectionStrings__Redis: "redis:6379"
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+    ports:
+      - "5080:8080"
+
+  # Two worker instances to demonstrate the distributed queue + rate limiter in practice: both
+  # compete for jobs off the same Redis stream, and both share the same Redis-backed rate limit
+  # buckets, so neither can exceed a policy's limit even though they run fully independently.
+  worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Database=weaver;Username=weaver;Password=weaver"
+      ConnectionStrings__Redis: "redis:6379"
+      WEAVER_INSTANCE_ID: "worker-1"
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Database=weaver;Username=weaver;Password=weaver"
+      ConnectionStrings__Redis: "redis:6379"
+      WEAVER_INSTANCE_ID: "worker-2"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: "http://localhost:5080"
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  weaver-pgdata:

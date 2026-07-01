@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Weaver.Worker-98504a4f-79d7-4422-9ab1-5e2a2e5a4f12</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Weaver.Domain\Weaver.Domain.csproj" />
+    <ProjectReference Include="..\Weaver.Infrastructure\Weaver.Infrastructure.csproj" />
+    <ProjectReference Include="..\Weaver.Scraping\Weaver.Scraping.csproj" />
+    <ProjectReference Include="..\Weaver.Workflows\Weaver.Workflows.csproj" />
+  </ItemGroup>
+</Project>

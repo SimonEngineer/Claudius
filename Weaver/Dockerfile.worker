@@ -1,0 +1,17 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY Weaver.sln .
+COPY src/Weaver.Domain/Weaver.Domain.csproj src/Weaver.Domain/
+COPY src/Weaver.Infrastructure/Weaver.Infrastructure.csproj src/Weaver.Infrastructure/
+COPY src/Weaver.Scraping/Weaver.Scraping.csproj src/Weaver.Scraping/
+COPY src/Weaver.Workflows/Weaver.Workflows.csproj src/Weaver.Workflows/
+COPY src/Weaver.Api/Weaver.Api.csproj src/Weaver.Api/
+COPY src/Weaver.Worker/Weaver.Worker.csproj src/Weaver.Worker/
+RUN dotnet restore src/Weaver.Worker/Weaver.Worker.csproj
+COPY src/ src/
+RUN dotnet publish src/Weaver.Worker/Weaver.Worker.csproj -c Release -o /app --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+ENTRYPOINT ["dotnet", "Weaver.Worker.dll"]
