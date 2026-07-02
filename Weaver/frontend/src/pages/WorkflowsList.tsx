@@ -26,6 +26,24 @@ export default function WorkflowsList() {
     mutationFn: WorkflowsApi.remove,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
   });
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const bulkId of ids) await WorkflowsApi.remove(bulkId);
+    },
+    onSuccess: () => {
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["workflows"] });
+    },
+  });
   const duplicateMutation = useMutation({
     mutationFn: WorkflowsApi.duplicate,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
@@ -54,6 +72,17 @@ export default function WorkflowsList() {
       <div className="page-header">
         <h2>Workflows</h2>
         <div style={{ display: "flex", gap: 8 }}>
+          {selectedIds.size > 0 && (
+            <button
+              className="danger"
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() => {
+                if (confirm(`Delete ${selectedIds.size} selected workflow(s)?`)) bulkDeleteMutation.mutate([...selectedIds]);
+              }}
+            >
+              Delete selected ({selectedIds.size})
+            </button>
+          )}
           <input ref={importInputRef} type="file" accept=".json" onChange={onImportFileChosen} style={{ display: "none" }} />
           <button onClick={() => importInputRef.current?.click()}>Import…</button>
           <Link to="/workflows/new">
@@ -78,6 +107,13 @@ export default function WorkflowsList() {
           <table>
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && filtered.every((w) => selectedIds.has(w.id))}
+                    onChange={(e) => setSelectedIds(e.target.checked ? new Set(filtered.map((w) => w.id)) : new Set())}
+                  />
+                </th>
                 <th>Name</th>
                 <th>Nodes</th>
                 <th>Status</th>
@@ -89,6 +125,9 @@ export default function WorkflowsList() {
             <tbody>
               {filtered.map((w) => (
                 <tr key={w.id}>
+                  <td>
+                    <input type="checkbox" checked={selectedIds.has(w.id)} onChange={() => toggleSelected(w.id)} />
+                  </td>
                   <td>
                     <Link to={`/workflows/${w.id}`}>{w.name}</Link>
                   </td>

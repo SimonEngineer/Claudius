@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
     {
         services.Configure<SmtpOptions>(configuration.GetSection("Smtp"));
         services.AddHttpClient("discord-webhook");
+        services.AddHttpClient("slack-webhook");
         services.AddHttpClient("http-request-node");
 
         services.AddScoped<IScriptDbAccess, ScriptDbAccess>();
@@ -27,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INodeHandler, ScrapeActionNode>();
         services.AddSingleton<INodeHandler, SendEmailNode>();
         services.AddSingleton<INodeHandler, SendDiscordNode>();
+        services.AddSingleton<INodeHandler, SendSlackNode>();
         services.AddSingleton<INodeHandler, FileLoggerNode>();
         services.AddSingleton<INodeHandler, CodeBlockNode>();
         services.AddSingleton<INodeHandler, HttpRequestNode>();

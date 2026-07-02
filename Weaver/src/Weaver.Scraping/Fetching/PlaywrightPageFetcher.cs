@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using Weaver.Scraping;
 
 namespace Weaver.Scraping.Fetching;
 
@@ -17,11 +18,26 @@ public class PlaywrightPageFetcher : IPageFetcher, IAsyncDisposable
     private IPlaywright? _playwright;
     private IBrowser? _browser;
 
-    public async Task<FetchedPage> FetchAsync(string url, IReadOnlyDictionary<string, string>? customHeaders = null, CancellationToken cancellationToken = default)
+    public async Task<FetchedPage> FetchAsync(
+        string url,
+        IReadOnlyDictionary<string, string>? customHeaders = null,
+        ProxyConfig? proxy = null,
+        CancellationToken cancellationToken = default)
     {
         var browser = await GetBrowserAsync();
 
-        await using var context = await browser.NewContextAsync(new BrowserNewContextOptions { UserAgent = UserAgent });
+        var contextOptions = new BrowserNewContextOptions { UserAgent = UserAgent };
+        if (proxy is { Enabled: true })
+        {
+            contextOptions.Proxy = new Microsoft.Playwright.Proxy
+            {
+                Server = proxy.BuildUri(),
+                Username = proxy.Username,
+                Password = proxy.Password,
+            };
+        }
+
+        await using var context = await browser.NewContextAsync(contextOptions);
         await ApplyCustomHeadersAsync(context, url, customHeaders);
         var page = await context.NewPageAsync();
 

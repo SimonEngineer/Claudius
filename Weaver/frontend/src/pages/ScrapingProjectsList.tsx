@@ -33,6 +33,24 @@ export default function ScrapingProjectsList() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-projects"] }),
   });
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const bulkId of ids) await ScrapingProjectsApi.remove(bulkId);
+    },
+    onSuccess: () => {
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["scraping-projects"] });
+    },
+  });
+
   const duplicateMutation = useMutation({
     mutationFn: ScrapingProjectsApi.duplicate,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-projects"] }),
@@ -42,9 +60,22 @@ export default function ScrapingProjectsList() {
     <div>
       <div className="page-header">
         <h2>Scraping Projects</h2>
-        <Link to="/scraping-projects/new">
-          <button className="primary">+ New Project</button>
-        </Link>
+        <div style={{ display: "flex", gap: 8 }}>
+          {selectedIds.size > 0 && (
+            <button
+              className="danger"
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() => {
+                if (confirm(`Delete ${selectedIds.size} selected project(s)?`)) bulkDeleteMutation.mutate([...selectedIds]);
+              }}
+            >
+              Delete selected ({selectedIds.size})
+            </button>
+          )}
+          <Link to="/scraping-projects/new">
+            <button className="primary">+ New Project</button>
+          </Link>
+        </div>
       </div>
 
       {projects.data && projects.data.length > 0 && (
@@ -61,6 +92,13 @@ export default function ScrapingProjectsList() {
           <table>
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id))}
+                    onChange={(e) => setSelectedIds(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
+                  />
+                </th>
                 <th>Name</th>
                 <th>Mode</th>
                 <th>Start URL</th>
@@ -72,6 +110,9 @@ export default function ScrapingProjectsList() {
             <tbody>
               {filtered.map((p) => (
                 <tr key={p.id}>
+                  <td>
+                    <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelected(p.id)} />
+                  </td>
                   <td>
                     <Link to={`/scraping-projects/${p.id}`}>{p.name}</Link>
                   </td>

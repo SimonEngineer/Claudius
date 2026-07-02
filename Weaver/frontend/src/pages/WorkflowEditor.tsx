@@ -91,6 +91,7 @@ function WorkflowEditorInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<WeaverNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [paletteSearch, setPaletteSearch] = useState("");
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const workflowIdRef = useRef<string | undefined>(id);
@@ -173,6 +174,18 @@ function WorkflowEditorInner() {
     },
   });
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (!saveMutation.isPending) saveMutation.mutate();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveMutation.isPending, name, description, isEnabled, nodes, edges]);
+
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge({ ...connection, id: crypto.randomUUID() }, eds)),
     [setEdges],
@@ -240,6 +253,26 @@ function WorkflowEditorInner() {
     setSelectedNodeId(null);
   };
 
+  const duplicateSelectedNode = () => {
+    const source = nodes.find((n) => n.id === selectedNodeId);
+    if (!source) return;
+    const newId = crypto.randomUUID();
+    const clone: Node<WeaverNodeData> = {
+      ...source,
+      id: newId,
+      position: { x: source.position.x + 40, y: source.position.y + 40 },
+      selected: false,
+      data: {
+        ...source.data,
+        label: `${source.data.label} (copy)`,
+        config: { ...source.data.config },
+        onRun: source.data.nodeType.startsWith("trigger.") ? () => handleRun(newId) : undefined,
+      },
+    };
+    setNodes((nds) => [...nds, clone]);
+    setSelectedNodeId(newId);
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -261,8 +294,18 @@ function WorkflowEditorInner() {
       <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 320px", gap: 16, height: "calc(100vh - 140px)" }}>
         <div className="card" style={{ margin: 0, overflow: "auto" }}>
           <h3 style={{ marginTop: 0, fontSize: 13 }}>Blocks</h3>
+          <input
+            placeholder="Filter blocks…"
+            value={paletteSearch}
+            onChange={(e) => setPaletteSearch(e.target.value)}
+            style={{ marginBottom: 8, width: "100%" }}
+          />
           <div className="node-palette">
-            {NODE_CATALOG.map((entry) => (
+            {NODE_CATALOG.filter((entry) => {
+              const term = paletteSearch.trim().toLowerCase();
+              if (!term) return true;
+              return entry.label.toLowerCase().includes(term) || entry.description.toLowerCase().includes(term) || entry.type.toLowerCase().includes(term);
+            }).map((entry) => (
               <div
                 key={entry.type}
                 className="node-palette-item"
@@ -310,6 +353,7 @@ function WorkflowEditorInner() {
               retryDelayMs={selectedNode.data.retryDelayMs}
               onChange={updateSelectedNode}
               onDelete={deleteSelectedNode}
+              onDuplicate={duplicateSelectedNode}
               onClose={() => setSelectedNodeId(null)}
             />
           ) : (

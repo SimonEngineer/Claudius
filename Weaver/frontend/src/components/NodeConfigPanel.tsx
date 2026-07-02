@@ -20,6 +20,7 @@ interface Props {
     retryDelayMs?: number;
   }) => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onClose: () => void;
 }
 
@@ -59,6 +60,7 @@ export default function NodeConfigPanel({
   retryDelayMs,
   onChange,
   onDelete,
+  onDuplicate,
   onClose,
 }: Props) {
   const setConfig = (patch: Record<string, unknown>) => onChange({ config: { ...config, ...patch } });
@@ -111,6 +113,14 @@ export default function NodeConfigPanel({
                 : <>Sender sends Secret verbatim in the <code>X-Weaver-Secret</code> header.</>}
             </p>
           </div>
+          <TextAreaField
+            label="IP allowlist (optional, one per line)"
+            value={((config.ipAllowlist as string[]) ?? []).join("\n")}
+            onChange={(v) =>
+              setConfig({ ipAllowlist: v.split("\n").map((line) => line.trim()).filter((line) => line !== "") })
+            }
+            hint="Exact IPs or CIDR ranges (e.g. 203.0.113.5 or 10.0.0.0/8) allowed to call this webhook. Leave empty to allow any source."
+          />
           {workflowId && (
             <div className="field">
               <label>Webhook URL</label>
@@ -222,6 +232,24 @@ export default function NodeConfigPanel({
             mono
             value={(config.webhookUrl as string) ?? ""}
             onChange={(v) => setConfig({ webhookUrl: v })}
+          />
+          <TextAreaField
+            label="Message"
+            value={(config.message as string) ?? ""}
+            onChange={(v) => setConfig({ message: v })}
+            hint="Use {{dot.path}} for the upstream node's output, or {{Node Name.path}} to reach back to any earlier node."
+          />
+        </>
+      )}
+
+      {nodeType === "action.sendSlack" && (
+        <>
+          <TextField
+            label="Webhook URL"
+            mono
+            value={(config.webhookUrl as string) ?? ""}
+            onChange={(v) => setConfig({ webhookUrl: v })}
+            placeholder="https://hooks.slack.com/services/…"
           />
           <TextAreaField
             label="Message"
@@ -391,15 +419,17 @@ export default function NodeConfigPanel({
         </div>
       )}
 
-      <button
-        className="danger"
-        style={{ marginTop: 8 }}
-        onClick={() => {
-          if (confirm(`Delete "${name || nodeType}"? This also removes any edges connected to it.`)) onDelete();
-        }}
-      >
-        Delete node
-      </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button onClick={onDuplicate}>Duplicate node</button>
+        <button
+          className="danger"
+          onClick={() => {
+            if (confirm(`Delete "${name || nodeType}"? This also removes any edges connected to it.`)) onDelete();
+          }}
+        >
+          Delete node
+        </button>
+      </div>
     </div>
   );
 }

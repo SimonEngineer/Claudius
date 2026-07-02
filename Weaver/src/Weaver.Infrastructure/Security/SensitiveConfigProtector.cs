@@ -30,7 +30,9 @@ public class SensitiveConfigProtector : ISensitiveConfigProtector
     private static readonly Dictionary<string, string[]> SensitiveFieldsByNodeType = new()
     {
         ["action.sendDiscord"] = new[] { "webhookUrl" },
+        ["action.sendSlack"] = new[] { "webhookUrl" },
         ["trigger.http"] = new[] { "secret" },
+        ["scrapingProject.proxy"] = new[] { "password" },
     };
 
     private readonly IDataProtector _protector;

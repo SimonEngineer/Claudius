@@ -33,6 +33,7 @@ public class TestExtractionService
         Guid scrapingProjectId,
         RenderMode renderMode = RenderMode.Http,
         IReadOnlyDictionary<string, string>? customHeaders = null,
+        ProxyConfig? proxy = null,
         CancellationToken cancellationToken = default)
     {
         var targetUri = new Uri(url);
@@ -41,7 +42,7 @@ public class TestExtractionService
         Fetching.FetchedPage fetched;
         try
         {
-            fetched = await _fetcherFactory.GetFetcher(renderMode).FetchAsync(url, customHeaders, cancellationToken);
+            fetched = await _fetcherFactory.GetFetcher(renderMode).FetchAsync(url, customHeaders, proxy, cancellationToken);
         }
         catch (Exception ex)
         {

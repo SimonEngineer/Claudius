@@ -8,6 +8,7 @@ import RateLimitPolicies from "./pages/RateLimitPolicies";
 import Activity from "./pages/Activity";
 import Account from "./pages/Account";
 import Login from "./pages/Login";
+import GlobalSearch from "./components/GlobalSearch";
 import { useAuth } from "./auth/AuthContext";
 
 function AppShell() {
@@ -19,6 +20,7 @@ function AppShell() {
         <h1>
           <span>Weaver</span>
         </h1>
+        <GlobalSearch />
         <nav>
           <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
             Dashboard

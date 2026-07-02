@@ -5,7 +5,7 @@ import { RateLimitPoliciesApi, ScrapingProjectsApi } from "../api/endpoints";
 import PagePicker, { type PickedElement } from "../components/PagePicker";
 import StatusPill from "../components/StatusPill";
 import ItemHistoryModal from "../components/ItemHistoryModal";
-import type { FieldAttribute, FieldSelector, PaginationStrategy, RenderMode, ScrapeMode, UpsertScrapingProjectRequest } from "../types";
+import { emptyProxyConfig, type FieldAttribute, type FieldSelector, type PaginationStrategy, type RenderMode, type ScrapeMode, type UpsertScrapingProjectRequest } from "../types";
 import { formatDuration } from "../utils/duration";
 import { onRunStatusChanged } from "../realtime/runStatusConnection";
 
@@ -21,6 +21,7 @@ const emptyForm: UpsertScrapingProjectRequest = {
   pageUrlTemplate: null,
   maxPages: 20,
   customHeaders: {},
+  proxy: emptyProxyConfig,
   dataRetentionDays: null,
   rateLimitPolicyId: null,
   isEnabled: true,
@@ -74,6 +75,19 @@ export default function ScrapingProjectEditor() {
     queryFn: () => ScrapingProjectsApi.items(id!, itemsPage, itemsPageSize),
     enabled: !isNew,
   });
+  const [itemSearchInput, setItemSearchInput] = useState("");
+  const [itemSearchTerm, setItemSearchTerm] = useState("");
+  useEffect(() => {
+    const handle = setTimeout(() => setItemSearchTerm(itemSearchInput.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [itemSearchInput]);
+  useEffect(() => setItemsPage(1), [itemSearchTerm]);
+  const itemSearch = useQuery({
+    queryKey: ["scraping-project-items-search", id, itemSearchTerm, itemsPage],
+    queryFn: () => ScrapingProjectsApi.searchItems(id!, itemSearchTerm, itemsPage, itemsPageSize),
+    enabled: !isNew && itemSearchTerm.length > 0,
+  });
+  const displayedItems = itemSearchTerm ? itemSearch.data : items.data;
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportError, setExportError] = useState<string | null>(null);
   const [historyItemKey, setHistoryItemKey] = useState<string | null>(null);
@@ -114,6 +128,18 @@ export default function ScrapingProjectEditor() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-project-runs", id] }),
   });
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (!saveMutation.isPending) saveMutation.mutate();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveMutation.isPending, form]);
+
   const testExtractMutation = useMutation({
     mutationFn: () =>
       ScrapingProjectsApi.testExtract({
@@ -125,6 +151,7 @@ export default function ScrapingProjectEditor() {
         scrapingProjectId: id ?? null,
         renderMode: form.renderMode,
         customHeaders: form.customHeaders,
+        proxy: form.proxy,
       }),
   });
 
@@ -191,9 +218,9 @@ export default function ScrapingProjectEditor() {
 
   const itemColumns = useMemo(() => {
     const cols = new Set<string>();
-    items.data?.items.forEach((i) => Object.keys(i.data).forEach((k) => cols.add(k)));
+    displayedItems?.items.forEach((i) => Object.keys(i.data).forEach((k) => cols.add(k)));
     return Array.from(cols);
-  }, [items.data]);
+  }, [displayedItems]);
 
   return (
     <div>
@@ -437,6 +464,70 @@ export default function ScrapingProjectEditor() {
 
           <div className="card">
             <div className="page-header">
+              <h3 style={{ margin: 0, fontSize: 14 }}>Outbound proxy</h3>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={form.proxy.enabled}
+                  onChange={(e) => setForm({ ...form, proxy: { ...form.proxy, enabled: e.target.checked } })}
+                />
+                <span className="muted">enabled</span>
+              </label>
+            </div>
+            <p style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 0 }}>
+              Routes every request this project makes through an HTTP or SOCKS5 proxy. The password is encrypted at rest.
+            </p>
+            {form.proxy.enabled && (
+              <div className="row">
+                <div className="field">
+                  <label>Protocol</label>
+                  <select
+                    value={form.proxy.protocol}
+                    onChange={(e) => setForm({ ...form, proxy: { ...form.proxy, protocol: e.target.value as "http" | "socks5" } })}
+                  >
+                    <option value="http">HTTP</option>
+                    <option value="socks5">SOCKS5</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Host</label>
+                  <input
+                    value={form.proxy.host}
+                    placeholder="proxy.example.com"
+                    onChange={(e) => setForm({ ...form, proxy: { ...form.proxy, host: e.target.value } })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Port</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={form.proxy.port || ""}
+                    onChange={(e) => setForm({ ...form, proxy: { ...form.proxy, port: Number(e.target.value) } })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Username (optional)</label>
+                  <input
+                    value={form.proxy.username ?? ""}
+                    onChange={(e) => setForm({ ...form, proxy: { ...form.proxy, username: e.target.value } })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Password (optional)</label>
+                  <input
+                    type="password"
+                    value={form.proxy.password ?? ""}
+                    onChange={(e) => setForm({ ...form, proxy: { ...form.proxy, password: e.target.value } })}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="page-header">
               <h3 style={{ margin: 0, fontSize: 14 }}>Fields to extract</h3>
               <div style={{ display: "flex", gap: 8 }}>
                 <button disabled={testExtractMutation.isPending} onClick={() => testExtractMutation.mutate()}>
@@ -629,7 +720,9 @@ export default function ScrapingProjectEditor() {
           {!isNew && items.data && items.data.totalCount > 0 && (
             <div className="card">
               <div className="page-header">
-                <h3 style={{ margin: 0, fontSize: 14 }}>Scraped items ({items.data.totalCount})</h3>
+                <h3 style={{ margin: 0, fontSize: 14 }}>
+                  Scraped items ({itemSearchTerm ? `${displayedItems?.totalCount ?? 0} matching` : items.data.totalCount})
+                </h3>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as "csv" | "json")}>
                     <option value="csv">CSV</option>
@@ -646,40 +739,50 @@ export default function ScrapingProjectEditor() {
                   </button>
                 </div>
               </div>
+              <input
+                placeholder="Search field values across all runs…"
+                value={itemSearchInput}
+                onChange={(e) => setItemSearchInput(e.target.value)}
+                style={{ marginBottom: 12, width: "100%", maxWidth: 360 }}
+              />
               {exportError && <p style={{ color: "var(--danger)", fontSize: 12 }}>{exportError}</p>}
-              <table>
-                <thead>
-                  <tr>
-                    {itemColumns.map((c) => (
-                      <th key={c}>{c}</th>
-                    ))}
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.data.items.map((item) => (
-                    <tr key={item.id}>
+              {displayedItems?.items.length ? (
+                <table>
+                  <thead>
+                    <tr>
                       {itemColumns.map((c) => (
-                        <td key={c} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {item.data[c] ?? ""}
-                        </td>
+                        <th key={c}>{c}</th>
                       ))}
-                      <td>
-                        <button onClick={() => setHistoryItemKey(item.itemKey)}>History</button>
-                      </td>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {displayedItems.items.map((item) => (
+                      <tr key={item.id}>
+                        {itemColumns.map((c) => (
+                          <td key={c} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {item.data[c] ?? ""}
+                          </td>
+                        ))}
+                        <td>
+                          <button onClick={() => setHistoryItemKey(item.itemKey)}>History</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                itemSearchTerm && <div className="empty-state">No items match "{itemSearchTerm}".</div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
                 <button disabled={itemsPage <= 1} onClick={() => setItemsPage((p) => Math.max(1, p - 1))}>
                   ← Prev
                 </button>
                 <span className="muted" style={{ fontSize: 12 }}>
-                  Page {itemsPage} of {Math.max(1, Math.ceil(items.data.totalCount / itemsPageSize))}
+                  Page {itemsPage} of {Math.max(1, Math.ceil((displayedItems?.totalCount ?? 0) / itemsPageSize))}
                 </span>
                 <button
-                  disabled={itemsPage * itemsPageSize >= items.data.totalCount}
+                  disabled={itemsPage * itemsPageSize >= (displayedItems?.totalCount ?? 0)}
                   onClick={() => setItemsPage((p) => p + 1)}
                 >
                   Next →

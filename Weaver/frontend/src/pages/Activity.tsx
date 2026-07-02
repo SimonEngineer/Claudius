@@ -2,12 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AuditLogApi } from "../api/endpoints";
-
-const resourceLink = (resourceType: string, resourceId: string) => {
-  if (resourceType === "ScrapingProject") return `/scraping-projects/${resourceId}`;
-  if (resourceType === "Workflow") return `/workflows/${resourceId}`;
-  return null;
-};
+import { resourceLink } from "../utils/resourceLink";
 
 export default function Activity() {
   const [page, setPage] = useState(1);

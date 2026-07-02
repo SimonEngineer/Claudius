@@ -4,6 +4,8 @@ import type {
   ApiKey,
   AuditLogEntry,
   CreatedApiKey,
+  DashboardStats,
+  ProxyConfig,
   FieldSelector,
   ItemSnapshot,
   NodeRun,
@@ -55,6 +57,10 @@ export const ScrapingProjectsApi = {
       .then((r) => r.data),
   exportItems: (id: string, format: "csv" | "json", runId?: string) =>
     downloadFromApi(`/api/scraping-projects/${id}/items/export`, { format, ...(runId ? { runId } : {}) }, `items.${format}`),
+  searchItems: (id: string, q: string, page = 1, pageSize = 50) =>
+    apiClient
+      .get<PagedResult<ScrapedItem>>(`/api/scraping-projects/${id}/items/search`, { params: { q, page, pageSize } })
+      .then((r) => r.data),
   itemHistory: (id: string, itemKey: string) =>
     apiClient.get<ItemSnapshot[]>(`/api/scraping-projects/${id}/items/history/${encodeURIComponent(itemKey)}`).then((r) => r.data),
   exportRuns: (id: string, format: "csv" | "json") =>
@@ -68,6 +74,7 @@ export const ScrapingProjectsApi = {
     scrapingProjectId: string | null;
     renderMode: RenderMode;
     customHeaders: Record<string, string>;
+    proxy?: ProxyConfig;
   }) => apiClient.post<TestExtractionResult>("/api/scraping-projects/test-extract", body).then((r) => r.data),
 };
 
@@ -86,6 +93,10 @@ export const ApiKeysApi = {
 export const AuditLogApi = {
   list: (page = 1, pageSize = 50) =>
     apiClient.get<PagedResult<AuditLogEntry>>("/api/audit-log", { params: { page, pageSize } }).then((r) => r.data),
+};
+
+export const DashboardApi = {
+  stats: () => apiClient.get<DashboardStats>("/api/dashboard/stats").then((r) => r.data),
 };
 
 export const RateLimitPoliciesApi = {

@@ -7,6 +7,17 @@ export type RunStatus = "Pending" | "Running" | "Succeeded" | "Failed" | "Cancel
 export type TriggerKind = "Manual" | "Schedule" | "Http" | "Event" | "Code";
 export type AuditAction = "Created" | "Updated" | "Deleted";
 
+export interface ProxyConfig {
+  enabled: boolean;
+  protocol: "http" | "socks5";
+  host: string;
+  port: number;
+  username: string | null;
+  password: string | null;
+}
+
+export const emptyProxyConfig: ProxyConfig = { enabled: false, protocol: "http", host: "", port: 0, username: "", password: "" };
+
 export interface FieldSelector {
   id: string | null;
   name: string;
@@ -32,6 +43,7 @@ export interface ScrapingProject {
   pageUrlTemplate: string | null;
   maxPages: number;
   customHeaders: Record<string, string>;
+  proxy: ProxyConfig;
   dataRetentionDays: number | null;
   rateLimitPolicyId: string | null;
   isEnabled: boolean;
@@ -123,6 +135,14 @@ export interface AuditLogEntry {
   resourceId: string;
   resourceName: string;
   createdAt: string;
+}
+
+export interface DashboardStats {
+  scrapesSucceededToday: number;
+  scrapesFailedToday: number;
+  workflowRunsSucceededToday: number;
+  workflowRunsFailedToday: number;
+  recentActivity: AuditLogEntry[];
 }
 
 export interface WorkflowNode {

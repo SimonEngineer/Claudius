@@ -3,6 +3,7 @@ using Weaver.Domain;
 using Weaver.Infrastructure.RateLimiting;
 using Weaver.Scraping;
 using Weaver.Scraping.Fetching;
+using Weaver.Tests.Support;
 using Xunit;
 
 namespace Weaver.Tests;
@@ -28,7 +29,7 @@ public class ScraperEngineTests
     }
 
     private static ScraperEngine BuildEngine(FakePageFetcher fetcher) =>
-        new(new FakePageFetcherFactory(fetcher), new RateLimitGate(new AlwaysAllowRateLimiter()), NullLogger<ScraperEngine>.Instance);
+        new(new FakePageFetcherFactory(fetcher), new RateLimitGate(new AlwaysAllowRateLimiter()), new PassthroughSensitiveConfigProtector(), NullLogger<ScraperEngine>.Instance);
 
     [Fact]
     public async Task RunAsync_UrlPatternPagination_StopsAtMaxPages()
@@ -153,7 +154,11 @@ public class ScraperEngineTests
 
         public FakePageFetcher(Func<string, FetchedPage> respond) => _respond = respond;
 
-        public Task<FetchedPage> FetchAsync(string url, IReadOnlyDictionary<string, string>? customHeaders = null, CancellationToken cancellationToken = default)
+        public Task<FetchedPage> FetchAsync(
+            string url,
+            IReadOnlyDictionary<string, string>? customHeaders = null,
+            ProxyConfig? proxy = null,
+            CancellationToken cancellationToken = default)
         {
             RequestedUrls.Add(url);
             LastCustomHeaders = customHeaders;

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Domain;
 using Weaver.Infrastructure.Persistence;
+using Weaver.Infrastructure.Security;
 using Weaver.Scraping;
 using Weaver.Scraping.Proxy;
 
@@ -14,11 +15,13 @@ public class ProxyController : ControllerBase
 {
     private readonly PageProxyService _proxyService;
     private readonly WeaverDbContext _db;
+    private readonly ISensitiveConfigProtector _protector;
 
-    public ProxyController(PageProxyService proxyService, WeaverDbContext db)
+    public ProxyController(PageProxyService proxyService, WeaverDbContext db, ISensitiveConfigProtector protector)
     {
         _proxyService = proxyService;
         _db = db;
+        _protector = protector;
     }
 
     [HttpGet]
@@ -43,6 +46,7 @@ public class ProxyController : ControllerBase
         // body on a GET the iframe can load from); a brand-new, not-yet-saved project previews
         // without them until the first save.
         Dictionary<string, string>? customHeaders = null;
+        ProxyConfig? proxy = null;
         if (scrapingProjectId is not null)
         {
             var project = await _db.ScrapingProjects.AsNoTracking()
@@ -50,10 +54,15 @@ public class ProxyController : ControllerBase
             if (project is not null)
             {
                 customHeaders = CustomHeadersParser.Parse(project.CustomHeadersJson);
+                var decryptedProxyJson = string.IsNullOrWhiteSpace(project.ProxyConfigJson)
+                    ? null
+                    : _protector.DecryptForUse("scrapingProject.proxy", project.ProxyConfigJson);
+                var parsedProxy = ProxyConfigParser.Parse(decryptedProxyJson);
+                proxy = parsedProxy.Enabled ? parsedProxy : null;
             }
         }
 
-        var page = await _proxyService.LoadForPickingAsync(url, policy, scrapingProjectId ?? Guid.Empty, renderMode, customHeaders, ct);
+        var page = await _proxyService.LoadForPickingAsync(url, policy, scrapingProjectId ?? Guid.Empty, renderMode, customHeaders, proxy, ct);
         return Content(page.Html, "text/html");
     }
 }

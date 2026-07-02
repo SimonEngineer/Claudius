@@ -44,6 +44,38 @@ a { color: var(--accent-2); text-decoration: none; }
 
 .sidebar h1 span { color: var(--accent-2); }
 
+.global-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  z-index: 20;
+  max-height: 320px;
+  overflow: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.global-search-group-label {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.global-search-result {
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.global-search-result:hover { background: var(--panel); }
+
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
 
 .sidebar nav a, .sidebar .navlink {

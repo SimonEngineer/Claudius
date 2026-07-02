@@ -50,6 +50,12 @@ export const NODE_CATALOG: NodeCatalogEntry[] = [
     defaultConfig: { webhookUrl: "", message: "" },
   },
   {
+    type: "action.sendSlack",
+    label: "Send Slack Message",
+    description: "Post to a Slack incoming webhook",
+    defaultConfig: { webhookUrl: "", message: "" },
+  },
+  {
     type: "action.code",
     label: "Code Block",
     description: "Run a C# script",

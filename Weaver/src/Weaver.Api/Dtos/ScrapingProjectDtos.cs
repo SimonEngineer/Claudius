@@ -1,6 +1,27 @@
 using Weaver.Domain;
+using Weaver.Infrastructure.Security;
 
 namespace Weaver.Api.Dtos;
+
+public record ProxyConfigDto(bool Enabled, string Protocol, string Host, int Port, string? Username, string? Password)
+{
+    public static ProxyConfigDto Disabled { get; } = new(false, "http", string.Empty, 0, null, null);
+
+    /// <summary>Decrypts the stored (possibly-encrypted) proxy config back to plaintext for display/editing.</summary>
+    public static ProxyConfigDto FromStoredJson(ISensitiveConfigProtector protector, string? proxyConfigJson)
+    {
+        var decrypted = string.IsNullOrWhiteSpace(proxyConfigJson) ? "{}" : protector.DecryptForUse("scrapingProject.proxy", proxyConfigJson);
+        var config = Weaver.Scraping.ProxyConfigParser.Parse(decrypted);
+        return new ProxyConfigDto(config.Enabled, config.Protocol, config.Host, config.Port, config.Username, config.Password);
+    }
+
+    /// <summary>Serializes and encrypts this DTO's password field for storage.</summary>
+    public string ToEncryptedJson(ISensitiveConfigProtector protector)
+    {
+        var json = Weaver.Scraping.ProxyConfigParser.ToJson(new Weaver.Scraping.ProxyConfig(Enabled, Protocol, Host, Port, Username, Password));
+        return protector.EncryptForStorage("scrapingProject.proxy", json);
+    }
+}
 
 public record FieldSelectorDto(
     Guid? Id,
@@ -26,6 +47,7 @@ public record ScrapingProjectDto(
     string? PageUrlTemplate,
     int MaxPages,
     Dictionary<string, string> CustomHeaders,
+    ProxyConfigDto Proxy,
     int? DataRetentionDays,
     Guid? RateLimitPolicyId,
     bool IsEnabled,
@@ -35,9 +57,10 @@ public record ScrapingProjectDto(
     RunStatus? LastRunStatus = null,
     DateTimeOffset? LastRunAt = null)
 {
-    public static ScrapingProjectDto FromEntity(ScrapingProject p) => new(
+    public static ScrapingProjectDto FromEntity(ScrapingProject p, ISensitiveConfigProtector protector) => new(
         p.Id, p.Name, p.Description, p.StartUrl, p.Mode, p.RenderMode, p.ItemSelector, p.PaginationStrategy,
         p.NextPageSelector, p.PageUrlTemplate, p.MaxPages, Weaver.Scraping.CustomHeadersParser.Parse(p.CustomHeadersJson),
+        ProxyConfigDto.FromStoredJson(protector, p.ProxyConfigJson),
         p.DataRetentionDays, p.RateLimitPolicyId, p.IsEnabled,
         p.CreatedAt, p.UpdatedAt,
         p.Fields.OrderBy(f => f.Order).Select(f => new FieldSelectorDto(
@@ -56,6 +79,7 @@ public record UpsertScrapingProjectRequest(
     string? PageUrlTemplate,
     int MaxPages,
     Dictionary<string, string>? CustomHeaders,
+    ProxyConfigDto? Proxy,
     int? DataRetentionDays,
     Guid? RateLimitPolicyId,
     bool IsEnabled,
@@ -98,4 +122,5 @@ public record TestExtractionRequest(
     Guid? RateLimitPolicyId,
     Guid? ScrapingProjectId,
     RenderMode RenderMode,
-    Dictionary<string, string>? CustomHeaders);
+    Dictionary<string, string>? CustomHeaders,
+    ProxyConfigDto? Proxy = null);

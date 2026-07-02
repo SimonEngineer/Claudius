@@ -59,6 +59,12 @@ public class WebhooksController : ControllerBase
         var config = decryptedConfigJson is null ? null : JsonNode.Parse(decryptedConfigJson);
         var expectedSecret = config?["secret"]?.GetValue<string>();
         var useHmacSignature = config?["hmacSignature"]?.GetValue<bool>() ?? false;
+        var ipAllowlist = config?["ipAllowlist"]?.AsArray().Select(n => n?.GetValue<string>() ?? string.Empty).ToList();
+
+        if (!IpAllowlist.IsAllowed(HttpContext.Connection.RemoteIpAddress, ipAllowlist))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden);
+        }
 
         if (!string.IsNullOrEmpty(expectedSecret))
         {

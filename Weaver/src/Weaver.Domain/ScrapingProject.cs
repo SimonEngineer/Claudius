@@ -31,6 +31,10 @@ public class ScrapingProject
     /// </summary>
     public string CustomHeadersJson { get; set; } = "{}";
 
+    /// <summary>Outbound HTTP/SOCKS5 proxy this project's requests are routed through (JSON-encoded
+    /// ProxyConfig; the password field is encrypted at rest). Null/disabled means no proxy.</summary>
+    public string ProxyConfigJson { get; set; } = "{}";
+
     /// <summary>How many days to keep completed scrape runs and their items before a background job
     /// purges them. Null means keep forever.</summary>
     public int? DataRetentionDays { get; set; }

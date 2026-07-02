@@ -6,6 +6,7 @@ using Weaver.Domain;
 using Weaver.Infrastructure.Auditing;
 using Weaver.Infrastructure.Persistence;
 using Weaver.Infrastructure.Queue;
+using Weaver.Infrastructure.Security;
 using Weaver.Scraping;
 
 namespace Weaver.Api.Controllers;
@@ -18,13 +19,16 @@ public class ScrapingProjectsController : ControllerBase
     private readonly IScrapeJobQueue _queue;
     private readonly TestExtractionService _testExtraction;
     private readonly IAuditLogger _auditLogger;
+    private readonly ISensitiveConfigProtector _protector;
 
-    public ScrapingProjectsController(WeaverDbContext db, IScrapeJobQueue queue, TestExtractionService testExtraction, IAuditLogger auditLogger)
+    public ScrapingProjectsController(
+        WeaverDbContext db, IScrapeJobQueue queue, TestExtractionService testExtraction, IAuditLogger auditLogger, ISensitiveConfigProtector protector)
     {
         _testExtraction = testExtraction;
         _db = db;
         _queue = queue;
         _auditLogger = auditLogger;
+        _protector = protector;
     }
 
     private Guid UserId => User.GetUserId();
@@ -46,7 +50,7 @@ public class ScrapingProjectsController : ControllerBase
 
         return projects.Select(p =>
         {
-            var dto = ScrapingProjectDto.FromEntity(p);
+            var dto = ScrapingProjectDto.FromEntity(p, _protector);
             return lastRunByProject.TryGetValue(p.Id, out var run) ? dto with { LastRunStatus = run.Status, LastRunAt = run.CreatedAt } : dto;
         }).ToList();
     }
@@ -55,7 +59,7 @@ public class ScrapingProjectsController : ControllerBase
     public async Task<ActionResult<ScrapingProjectDto>> Get(Guid id, CancellationToken ct)
     {
         var project = await _db.ScrapingProjects.Include(p => p.Fields).FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
-        return project is null ? NotFound() : ScrapingProjectDto.FromEntity(project);
+        return project is null ? NotFound() : ScrapingProjectDto.FromEntity(project, _protector);
     }
 
     [HttpPost]
@@ -80,6 +84,7 @@ public class ScrapingProjectsController : ControllerBase
             PageUrlTemplate = request.PageUrlTemplate,
             MaxPages = request.MaxPages,
             CustomHeadersJson = JsonSerializer.Serialize(request.CustomHeaders ?? new Dictionary<string, string>()),
+            ProxyConfigJson = (request.Proxy ?? ProxyConfigDto.Disabled).ToEncryptedJson(_protector),
             DataRetentionDays = request.DataRetentionDays,
             RateLimitPolicyId = request.RateLimitPolicyId,
             IsEnabled = request.IsEnabled,
@@ -89,7 +94,7 @@ public class ScrapingProjectsController : ControllerBase
         _db.ScrapingProjects.Add(project);
         _auditLogger.Record(UserId, AuditAction.Created, "ScrapingProject", project.Id, project.Name);
         await _db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(Get), new { id = project.Id }, ScrapingProjectDto.FromEntity(project));
+        return CreatedAtAction(nameof(Get), new { id = project.Id }, ScrapingProjectDto.FromEntity(project, _protector));
     }
 
     [HttpPut("{id:guid}")]
@@ -117,6 +122,7 @@ public class ScrapingProjectsController : ControllerBase
         project.PageUrlTemplate = request.PageUrlTemplate;
         project.MaxPages = request.MaxPages;
         project.CustomHeadersJson = JsonSerializer.Serialize(request.CustomHeaders ?? new Dictionary<string, string>());
+        project.ProxyConfigJson = (request.Proxy ?? ProxyConfigDto.Disabled).ToEncryptedJson(_protector);
         project.DataRetentionDays = request.DataRetentionDays;
         project.RateLimitPolicyId = request.RateLimitPolicyId;
         project.IsEnabled = request.IsEnabled;
@@ -128,7 +134,7 @@ public class ScrapingProjectsController : ControllerBase
 
         _auditLogger.Record(UserId, AuditAction.Updated, "ScrapingProject", project.Id, project.Name);
         await _db.SaveChangesAsync(ct);
-        return ScrapingProjectDto.FromEntity(project);
+        return ScrapingProjectDto.FromEntity(project, _protector);
     }
 
     [HttpDelete("{id:guid}")]
@@ -169,6 +175,7 @@ public class ScrapingProjectsController : ControllerBase
             PageUrlTemplate = source.PageUrlTemplate,
             MaxPages = source.MaxPages,
             CustomHeadersJson = source.CustomHeadersJson,
+            ProxyConfigJson = source.ProxyConfigJson,
             DataRetentionDays = source.DataRetentionDays,
             RateLimitPolicyId = source.RateLimitPolicyId,
             IsEnabled = source.IsEnabled,
@@ -192,7 +199,7 @@ public class ScrapingProjectsController : ControllerBase
         _db.ScrapingProjects.Add(copy);
         _auditLogger.Record(UserId, AuditAction.Created, "ScrapingProject", copy.Id, copy.Name);
         await _db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(Get), new { id = copy.Id }, ScrapingProjectDto.FromEntity(copy));
+        return CreatedAtAction(nameof(Get), new { id = copy.Id }, ScrapingProjectDto.FromEntity(copy, _protector));
     }
 
     /// <summary>Enqueues a scrape job onto the distributed queue rather than running inline, so this call stays fast and any worker instance can pick it up.</summary>
@@ -265,6 +272,34 @@ public class ScrapingProjectsController : ControllerBase
 
         var query = _db.ScrapedItems.Where(i => i.ScrapingProjectId == id);
         query = runId is not null ? query.Where(i => i.ScrapeRunId == runId) : query;
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query.OrderByDescending(i => i.CreatedAt)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        return new PagedResult<ScrapedItemDto>(items.Select(ScrapedItemDto.FromEntity).ToList(), totalCount, page, pageSize);
+    }
+
+    /// <summary>Full-text search across every extracted field value in this project's scraped items (Postgres jsonb-as-text ILIKE), across all runs.</summary>
+    [HttpGet("{id:guid}/items/search")]
+    public async Task<ActionResult<PagedResult<ScrapedItemDto>>> SearchItems(
+        Guid id, [FromQuery] string q, [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+    {
+        if (!await _db.ScrapingProjects.AnyAsync(p => p.Id == id && p.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
+        if (string.IsNullOrWhiteSpace(q))
+        {
+            return new PagedResult<ScrapedItemDto>(new List<ScrapedItemDto>(), 0, page, pageSize);
+        }
+
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 500);
+
+        var pattern = "%" + q.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        var query = _db.ScrapedItems.FromSqlInterpolated(
+            $@"SELECT * FROM scraped_items WHERE ""ScrapingProjectId"" = {id} AND ""Data""::text ILIKE {pattern} ESCAPE '\'");
 
         var totalCount = await query.CountAsync(ct);
         var items = await query.OrderByDescending(i => i.CreatedAt)
@@ -373,20 +408,29 @@ public class ScrapingProjectsController : ControllerBase
             Order = f.Order,
         }).ToList();
 
+        var proxy = request.Proxy is { Enabled: true } p
+            ? new ProxyConfig(p.Enabled, p.Protocol, p.Host, p.Port, p.Username, p.Password)
+            : null;
+
         var result = await _testExtraction.ExtractAsync(
             request.Url, request.Mode, request.ItemSelector, fields, policy, request.ScrapingProjectId ?? Guid.Empty,
-            request.RenderMode, request.CustomHeaders, ct);
+            request.RenderMode, request.CustomHeaders, proxy, ct);
         return result;
     }
 
     private async Task<bool> OwnsPolicyOrNullAsync(Guid? policyId, CancellationToken ct) =>
         policyId is null || await _db.RateLimitPolicies.AnyAsync(p => p.Id == policyId && p.OwnerUserId == UserId, ct);
 
-    private static void ApplyFields(ScrapingProject project, List<FieldSelectorDto> fields)
+    /// <summary>Adds new FieldSelectors via the DbSet, not project.Fields.Add -- when project is
+    /// already tracked (the Update path), EF's change tracker otherwise misclassifies a new child
+    /// reached only through a tracked parent's navigation as Modified instead of Added, because
+    /// FieldSelector.Id defaults to a non-empty GUID. EF's own relationship fixup (matching
+    /// ScrapingProjectId to the tracked parent) adds it to project.Fields automatically.</summary>
+    private void ApplyFields(ScrapingProject project, List<FieldSelectorDto> fields)
     {
         foreach (var f in fields)
         {
-            project.Fields.Add(new FieldSelector
+            _db.FieldSelectors.Add(new FieldSelector
             {
                 ScrapingProjectId = project.Id,
                 Name = f.Name,

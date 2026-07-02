@@ -2,6 +2,7 @@ using AngleSharp;
 using AngleSharp.Dom;
 using Microsoft.Extensions.Logging;
 using Weaver.Domain;
+using Weaver.Infrastructure.Security;
 using Weaver.Scraping.Fetching;
 
 namespace Weaver.Scraping;
@@ -10,13 +11,15 @@ public class ScraperEngine
 {
     private readonly IPageFetcherFactory _fetcherFactory;
     private readonly RateLimitGate _rateLimitGate;
+    private readonly ISensitiveConfigProtector _protector;
     private readonly IBrowsingContext _browsingContext;
     private readonly ILogger<ScraperEngine> _logger;
 
-    public ScraperEngine(IPageFetcherFactory fetcherFactory, RateLimitGate rateLimitGate, ILogger<ScraperEngine> logger)
+    public ScraperEngine(IPageFetcherFactory fetcherFactory, RateLimitGate rateLimitGate, ISensitiveConfigProtector protector, ILogger<ScraperEngine> logger)
     {
         _fetcherFactory = fetcherFactory;
         _rateLimitGate = rateLimitGate;
+        _protector = protector;
         _logger = logger;
         _browsingContext = BrowsingContext.New(Configuration.Default);
     }
@@ -25,6 +28,7 @@ public class ScraperEngine
     {
         var fetcher = _fetcherFactory.GetFetcher(project.RenderMode);
         var customHeaders = CustomHeadersParser.Parse(project.CustomHeadersJson);
+        var proxy = ResolveProxy(project.ProxyConfigJson);
         var items = new List<ExtractedItem>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var currentUrl = project.StartUrl;
@@ -45,7 +49,7 @@ public class ScraperEngine
             FetchedPage fetched;
             try
             {
-                fetched = await fetcher.FetchAsync(currentUrl, customHeaders, cancellationToken);
+                fetched = await fetcher.FetchAsync(currentUrl, customHeaders, proxy, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -73,6 +77,18 @@ public class ScraperEngine
         }
 
         return new ScrapeResult(pagesCrawled, items, null);
+    }
+
+    private ProxyConfig? ResolveProxy(string? proxyConfigJson)
+    {
+        if (string.IsNullOrWhiteSpace(proxyConfigJson))
+        {
+            return null;
+        }
+
+        var decrypted = _protector.DecryptForUse("scrapingProject.proxy", proxyConfigJson);
+        var config = ProxyConfigParser.Parse(decrypted);
+        return config.Enabled ? config : null;
     }
 
     internal static IEnumerable<ExtractedItem> ExtractItemsFromPage(IDocument document, ScrapingProject project, Uri pageUrl)
