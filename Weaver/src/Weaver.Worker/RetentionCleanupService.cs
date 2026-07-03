@@ -5,10 +5,10 @@ using Weaver.Infrastructure.Persistence;
 namespace Weaver.Worker;
 
 /// <summary>
-/// Ticks hourly and, for every project with a DataRetentionDays limit set, deletes finished scrape
-/// runs older than that limit. Deleting a ScrapeRun cascades (at the database level) to its
-/// ScrapedItems, so there's nothing extra to clean up there. Runs still Pending/Running are never
-/// touched regardless of age.
+/// Ticks hourly and deletes old finished runs: scrape runs for projects with a DataRetentionDays
+/// limit (a ScrapeRun's ScrapedItems cascade at the database level), and workflow runs for
+/// workflows with a RunRetentionDays limit (NodeRuns cascade likewise). Runs still Pending/Running
+/// are never touched regardless of age.
 /// </summary>
 public class RetentionCleanupService : BackgroundService
 {
@@ -63,6 +63,27 @@ public class RetentionCleanupService : BackgroundService
                 _logger.LogInformation(
                     "Retention cleanup purged {Count} scrape run(s) (and their items) for project {ProjectName}, older than {Days}d",
                     deleted, project.Name, project.DataRetentionDays);
+            }
+        }
+
+        var workflows = await db.Workflows
+            .Where(w => w.RunRetentionDays != null)
+            .Select(w => new { w.Id, w.Name, w.RunRetentionDays })
+            .ToListAsync(ct);
+
+        foreach (var workflow in workflows)
+        {
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-workflow.RunRetentionDays!.Value);
+            var deleted = await db.WorkflowRuns
+                .Where(r => r.WorkflowId == workflow.Id && r.CreatedAt < cutoff
+                    && (r.Status == RunStatus.Succeeded || r.Status == RunStatus.Failed || r.Status == RunStatus.Cancelled))
+                .ExecuteDeleteAsync(ct);
+
+            if (deleted > 0)
+            {
+                _logger.LogInformation(
+                    "Retention cleanup purged {Count} workflow run(s) for workflow {WorkflowName}, older than {Days}d",
+                    deleted, workflow.Name, workflow.RunRetentionDays);
             }
         }
     }

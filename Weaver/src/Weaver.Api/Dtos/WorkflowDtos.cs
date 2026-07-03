@@ -25,16 +25,19 @@ public record WorkflowEdgeDto(Guid Id, Guid SourceNodeId, string? SourceHandle, 
 }
 
 public record WorkflowDto(
-    Guid Id, string Name, string? Description, bool IsEnabled, DateTimeOffset UpdatedAt, List<WorkflowNodeDto> Nodes, List<WorkflowEdgeDto> Edges,
+    Guid Id, string Name, string? Description, bool IsEnabled, int? RunRetentionDays, DateTimeOffset UpdatedAt,
+    List<WorkflowNodeDto> Nodes, List<WorkflowEdgeDto> Edges,
     RunStatus? LastRunStatus = null, DateTimeOffset? LastRunAt = null)
 {
     public static WorkflowDto FromEntity(Workflow w, ISensitiveConfigProtector protector) => new(
-        w.Id, w.Name, w.Description, w.IsEnabled, w.UpdatedAt,
+        w.Id, w.Name, w.Description, w.IsEnabled, w.RunRetentionDays, w.UpdatedAt,
         w.Nodes.Select(n => WorkflowNodeDto.FromEntity(n, protector)).ToList(),
         w.Edges.Select(WorkflowEdgeDto.FromEntity).ToList());
 }
 
-public record UpsertWorkflowRequest(string Name, string? Description, bool IsEnabled, List<WorkflowNodeDto> Nodes, List<WorkflowEdgeDto> Edges);
+public record UpsertWorkflowRequest(
+    string Name, string? Description, bool IsEnabled, List<WorkflowNodeDto> Nodes, List<WorkflowEdgeDto> Edges,
+    int? RunRetentionDays = null);
 
 public record WorkflowRunDto(
     Guid Id, Guid WorkflowId, RunStatus Status, TriggerKind TriggerKind, string? TriggerNodeType,
@@ -59,6 +62,26 @@ public record NodeRunDto(
 }
 
 public record WorkflowRunDetailDto(WorkflowRunDto Run, List<NodeRunDto> NodeRuns);
+
+/// <summary>Internal (not user-facing) snapshot format for workflow revisions. Unlike the export
+/// file, node config is kept verbatim -- still encrypted at rest -- so restoring a revision brings
+/// secrets back intact instead of blanking them.</summary>
+public record WorkflowRevisionNode(
+    string Ref, string Type, string Name, string ConfigJson,
+    bool IsDisabled, int MaxRetries, int RetryDelayMs, double PositionX, double PositionY);
+
+public record WorkflowRevisionEdge(string SourceRef, string? SourceHandle, string TargetRef, string? TargetHandle);
+
+public record WorkflowRevisionSnapshot(string Name, string? Description, List<WorkflowRevisionNode> Nodes, List<WorkflowRevisionEdge> Edges)
+{
+    public static WorkflowRevisionSnapshot FromEntity(Workflow w) => new(
+        w.Name, w.Description,
+        w.Nodes.Select(n => new WorkflowRevisionNode(
+            n.Id.ToString(), n.Type, n.Name, n.ConfigJson, n.IsDisabled, n.MaxRetries, n.RetryDelayMs, n.PositionX, n.PositionY)).ToList(),
+        w.Edges.Select(e => new WorkflowRevisionEdge(e.SourceNodeId.ToString(), e.SourceHandle, e.TargetNodeId.ToString(), e.TargetHandle)).ToList());
+}
+
+public record WorkflowRevisionDto(Guid Id, string WorkflowName, int NodeCount, DateTimeOffset CreatedAt);
 
 /// <summary>Portable node record for a workflow export file. "Ref" is a string identifier that's
 /// only meaningful within the file itself (edges point at nodes by Ref, not by database id) --

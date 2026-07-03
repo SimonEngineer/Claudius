@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { ApiKeysApi, AuthApi } from "../api/endpoints";
+import { useEffect, useState } from "react";
+import { ApiKeysApi, AuthApi, CredentialsApi, NotificationSettingsApi } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
-import type { CreatedApiKey } from "../types";
+import type { CreatedApiKey, NotificationSettings } from "../types";
+import { usePageTitle } from "../utils/usePageTitle";
 
 export default function Account() {
+  usePageTitle("Account");
   const { user } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -28,6 +30,52 @@ export default function Account() {
   const removeKeyMutation = useMutation({
     mutationFn: ApiKeysApi.remove,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-keys"] }),
+  });
+
+  const credentials = useQuery({ queryKey: ["credentials"], queryFn: CredentialsApi.list });
+  const [newCredName, setNewCredName] = useState("");
+  const [newCredValue, setNewCredValue] = useState("");
+  const [credError, setCredError] = useState<string | null>(null);
+  const createCredMutation = useMutation({
+    mutationFn: () => CredentialsApi.create(newCredName.trim(), newCredValue),
+    onSuccess: () => {
+      setNewCredName("");
+      setNewCredValue("");
+      setCredError(null);
+      queryClient.invalidateQueries({ queryKey: ["credentials"] });
+    },
+    onError: (e) => {
+      const message = (e as { response?: { data?: string } }).response?.data;
+      setCredError(typeof message === "string" ? message : "Could not create credential.");
+    },
+  });
+  const updateCredMutation = useMutation({
+    mutationFn: ({ id, value }: { id: string; value: string }) => CredentialsApi.updateValue(id, value),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["credentials"] }),
+  });
+  const removeCredMutation = useMutation({
+    mutationFn: CredentialsApi.remove,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["credentials"] }),
+  });
+
+  const notificationSettings = useQuery({ queryKey: ["notification-settings"], queryFn: NotificationSettingsApi.get });
+  const [notifForm, setNotifForm] = useState<NotificationSettings>({
+    notifyOnScrapeFailure: false,
+    notifyOnWorkflowFailure: false,
+    emailEnabled: false,
+    webhookUrl: null,
+  });
+  const [notifSaved, setNotifSaved] = useState(false);
+  useEffect(() => {
+    if (notificationSettings.data) setNotifForm(notificationSettings.data);
+  }, [notificationSettings.data]);
+  const saveNotifMutation = useMutation({
+    mutationFn: () => NotificationSettingsApi.update(notifForm),
+    onSuccess: () => {
+      setNotifSaved(true);
+      setTimeout(() => setNotifSaved(false), 1500);
+      queryClient.invalidateQueries({ queryKey: ["notification-settings"] });
+    },
   });
 
   const submit = async () => {
@@ -163,6 +211,117 @@ export default function Account() {
         ) : (
           <p className="muted">No API keys yet.</p>
         )}
+      </div>
+
+      <div className="card" style={{ maxWidth: 600 }}>
+        <h3 style={{ marginTop: 0, fontSize: 14 }}>Credentials</h3>
+        <p className="muted">
+          Named secrets you can reference from any workflow node config as{" "}
+          <code>{"{{secrets.NAME}}"}</code> -- the value is encrypted at rest and substituted only at
+          execution time, so it never appears in the workflow itself or its export file. Values are
+          write-only: they can be overwritten but never read back.
+        </p>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input placeholder="Name, e.g. MY_API_KEY" className="mono" value={newCredName} onChange={(e) => setNewCredName(e.target.value)} />
+          <input placeholder="Secret value" type="password" value={newCredValue} onChange={(e) => setNewCredValue(e.target.value)} />
+          <button
+            className="primary"
+            disabled={!newCredName.trim() || !newCredValue || createCredMutation.isPending}
+            onClick={() => createCredMutation.mutate()}
+          >
+            + Add
+          </button>
+        </div>
+        {credError && <p style={{ color: "var(--danger)", fontSize: 12 }}>{credError}</p>}
+
+        {credentials.data?.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Reference</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {credentials.data.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.name}</td>
+                  <td className="mono muted">{`{{secrets.${c.name}}}`}</td>
+                  <td className="muted">{new Date(c.updatedAt).toLocaleString()}</td>
+                  <td style={{ display: "flex", gap: 6 }}>
+                    <button
+                      disabled={updateCredMutation.isPending}
+                      onClick={() => {
+                        const value = prompt(`New value for "${c.name}" (the old value can't be shown):`);
+                        if (value) updateCredMutation.mutate({ id: c.id, value });
+                      }}
+                    >
+                      Replace value
+                    </button>
+                    <button
+                      className="danger"
+                      onClick={() => {
+                        if (confirm(`Delete "${c.name}"? Nodes referencing it will keep the literal placeholder text.`)) {
+                          removeCredMutation.mutate(c.id);
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">No credentials yet.</p>
+        )}
+      </div>
+
+      <div className="card" style={{ maxWidth: 600 }}>
+        <h3 style={{ marginTop: 0, fontSize: 14 }}>Failure notifications</h3>
+        <p className="muted">Get notified when a scrape or workflow run fails.</p>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={notifForm.notifyOnScrapeFailure}
+            onChange={(e) => setNotifForm({ ...notifForm, notifyOnScrapeFailure: e.target.checked })}
+          />
+          Notify on scrape failures
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={notifForm.notifyOnWorkflowFailure}
+            onChange={(e) => setNotifForm({ ...notifForm, notifyOnWorkflowFailure: e.target.checked })}
+          />
+          Notify on workflow failures
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={notifForm.emailEnabled}
+            onChange={(e) => setNotifForm({ ...notifForm, emailEnabled: e.target.checked })}
+          />
+          Email me at {user?.email}
+        </label>
+        <div className="field">
+          <label>Webhook URL (optional — receives a JSON POST; stored encrypted)</label>
+          <input
+            className="mono"
+            placeholder="https://hooks.slack.com/services/…"
+            value={notifForm.webhookUrl ?? ""}
+            onChange={(e) => setNotifForm({ ...notifForm, webhookUrl: e.target.value === "" ? null : e.target.value })}
+          />
+        </div>
+
+        <button className="primary" disabled={saveNotifMutation.isPending} onClick={() => saveNotifMutation.mutate()}>
+          {notifSaved ? "Saved!" : "Save notification settings"}
+        </button>
       </div>
     </div>
   );

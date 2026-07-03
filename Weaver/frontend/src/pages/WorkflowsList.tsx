@@ -4,8 +4,11 @@ import { Link } from "react-router-dom";
 import { WorkflowsApi } from "../api/endpoints";
 import StatusPill from "../components/StatusPill";
 import { onRunStatusChanged } from "../realtime/runStatusConnection";
+import { timeAgo } from "../utils/timeAgo";
+import { usePageTitle } from "../utils/usePageTitle";
 
 export default function WorkflowsList() {
+  usePageTitle("Workflows");
   const queryClient = useQueryClient();
   const workflows = useQuery({ queryKey: ["workflows"], queryFn: WorkflowsApi.list });
 
@@ -17,11 +20,28 @@ export default function WorkflowsList() {
     });
   }, [queryClient]);
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<"name" | "updated" | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
+  const toggleSort = (key: "name" | "updated") => {
+    if (sortKey === key) setSortAsc((a) => !a);
+    else {
+      setSortKey(key);
+      setSortAsc(key === "name");
+    }
+  };
+  const sortIndicator = (key: "name" | "updated") => (sortKey === key ? (sortAsc ? " ↑" : " ↓") : "");
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return workflows.data;
-    return workflows.data?.filter((w) => w.name.toLowerCase().includes(term));
-  }, [workflows.data, search]);
+    const matched = term ? workflows.data?.filter((w) => w.name.toLowerCase().includes(term)) : workflows.data;
+    if (!matched || !sortKey) return matched;
+    return [...matched].sort((a, b) => {
+      const cmp =
+        sortKey === "name"
+          ? a.name.localeCompare(b.name)
+          : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [workflows.data, search, sortKey, sortAsc]);
   const deleteMutation = useMutation({
     mutationFn: WorkflowsApi.remove,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
@@ -48,6 +68,14 @@ export default function WorkflowsList() {
     mutationFn: WorkflowsApi.duplicate,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
   });
+
+  const runMutation = useMutation({
+    mutationFn: ({ workflowId, nodeId }: { workflowId: string; nodeId: string }) =>
+      WorkflowsApi.runFromNode(workflowId, nodeId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
+  });
+  const manualTriggerOf = (w: { nodes: { id: string; type: string }[] }) =>
+    w.nodes.find((n) => n.type === "trigger.manual");
   const [importError, setImportError] = useState<string | null>(null);
   const importMutation = useMutation({
     mutationFn: (fileContents: string) => WorkflowsApi.importWorkflow(fileContents),
@@ -114,11 +142,15 @@ export default function WorkflowsList() {
                     onChange={(e) => setSelectedIds(e.target.checked ? new Set(filtered.map((w) => w.id)) : new Set())}
                   />
                 </th>
-                <th>Name</th>
+                <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("name")}>
+                  Name{sortIndicator("name")}
+                </th>
                 <th>Nodes</th>
                 <th>Status</th>
                 <th>Last run</th>
-                <th>Updated</th>
+                <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("updated")}>
+                  Updated{sortIndicator("updated")}
+                </th>
                 <th></th>
               </tr>
             </thead>
@@ -141,13 +173,25 @@ export default function WorkflowsList() {
                     {w.lastRunStatus ? (
                       <span title={w.lastRunAt ? new Date(w.lastRunAt).toLocaleString() : undefined}>
                         <StatusPill status={w.lastRunStatus} />
+                        {w.lastRunAt && <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>{timeAgo(w.lastRunAt)}</span>}
                       </span>
                     ) : (
                       <span className="muted">never run</span>
                     )}
                   </td>
-                  <td className="muted">{new Date(w.updatedAt).toLocaleString()}</td>
+                  <td className="muted" title={new Date(w.updatedAt).toLocaleString()}>
+                    {timeAgo(w.updatedAt)}
+                  </td>
                   <td style={{ display: "flex", gap: 6 }}>
+                    {manualTriggerOf(w) && (
+                      <button
+                        disabled={runMutation.isPending || !w.isEnabled}
+                        title={w.isEnabled ? "Fire this workflow's manual trigger" : "Enable the workflow to run it"}
+                        onClick={() => runMutation.mutate({ workflowId: w.id, nodeId: manualTriggerOf(w)!.id })}
+                      >
+                        Run
+                      </button>
+                    )}
                     <button disabled={duplicateMutation.isPending} onClick={() => duplicateMutation.mutate(w.id)}>
                       Duplicate
                     </button>

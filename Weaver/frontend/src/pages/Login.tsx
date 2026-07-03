@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { usePageTitle } from "../utils/usePageTitle";
 
 export default function Login() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "register">("login");
+  usePageTitle(mode === "login" ? "Log in" : "Register");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const submit = async () => {
     setError(null);
@@ -44,7 +47,18 @@ export default function Login() {
         </div>
         <div className="field">
           <label>Password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !busy && email && password && submit()}
+              style={{ flex: 1 }}
+            />
+            <button type="button" title={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((s) => !s)}>
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
         </div>
 
         {error && <p style={{ color: "var(--danger)" }}>{error}</p>}

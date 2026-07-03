@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useState } from "react";
 import { WorkflowsApi } from "../api/endpoints";
 import StatusPill from "./StatusPill";
@@ -20,6 +20,11 @@ export default function WorkflowRunHistory({ workflowId }: { workflowId: string 
     queryKey: ["workflow-run-detail", expanded],
     queryFn: () => WorkflowsApi.runDetail(expanded!),
     enabled: !!expanded,
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (runId: string) => WorkflowsApi.cancelRun(runId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflow-runs", workflowId] }),
   });
 
   useEffect(() => {
@@ -58,7 +63,12 @@ export default function WorkflowRunHistory({ workflowId }: { workflowId: string 
                   </td>
                   <td className="muted">{r.startedAt ? new Date(r.startedAt).toLocaleString() : "-"}</td>
                   <td className="muted">{formatDuration(r.startedAt, r.completedAt) ?? "-"}</td>
-                  <td>
+                  <td style={{ display: "flex", gap: 6 }}>
+                    {(r.status === "Running" || r.status === "Pending") && (
+                      <button disabled={cancelMutation.isPending} onClick={() => cancelMutation.mutate(r.id)}>
+                        Cancel
+                      </button>
+                    )}
                     <button onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
                       {expanded === r.id ? "Hide" : "Details"}
                     </button>

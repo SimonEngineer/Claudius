@@ -4,8 +4,11 @@ import { Link } from "react-router-dom";
 import { ScrapingProjectsApi } from "../api/endpoints";
 import StatusPill from "../components/StatusPill";
 import { onRunStatusChanged } from "../realtime/runStatusConnection";
+import { timeAgo } from "../utils/timeAgo";
+import { usePageTitle } from "../utils/usePageTitle";
 
 export default function ScrapingProjectsList() {
+  usePageTitle("Scraping Projects");
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list });
 
@@ -17,11 +20,30 @@ export default function ScrapingProjectsList() {
     });
   }, [queryClient]);
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<"name" | "updated" | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
+  const toggleSort = (key: "name" | "updated") => {
+    if (sortKey === key) setSortAsc((a) => !a);
+    else {
+      setSortKey(key);
+      setSortAsc(key === "name");
+    }
+  };
+  const sortIndicator = (key: "name" | "updated") => (sortKey === key ? (sortAsc ? " ↑" : " ↓") : "");
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return projects.data;
-    return projects.data?.filter((p) => p.name.toLowerCase().includes(term) || p.startUrl.toLowerCase().includes(term));
-  }, [projects.data, search]);
+    const matched = term
+      ? projects.data?.filter((p) => p.name.toLowerCase().includes(term) || p.startUrl.toLowerCase().includes(term))
+      : projects.data;
+    if (!matched || !sortKey) return matched;
+    return [...matched].sort((a, b) => {
+      const cmp =
+        sortKey === "name"
+          ? a.name.localeCompare(b.name)
+          : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [projects.data, search, sortKey, sortAsc]);
 
   const runMutation = useMutation({
     mutationFn: ScrapingProjectsApi.run,
@@ -99,11 +121,15 @@ export default function ScrapingProjectsList() {
                     onChange={(e) => setSelectedIds(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
                   />
                 </th>
-                <th>Name</th>
+                <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("name")}>
+                  Name{sortIndicator("name")}
+                </th>
                 <th>Mode</th>
                 <th>Start URL</th>
                 <th>Status</th>
-                <th>Last run</th>
+                <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("updated")}>
+                  Last run{sortIndicator("updated")}
+                </th>
                 <th></th>
               </tr>
             </thead>
@@ -129,6 +155,7 @@ export default function ScrapingProjectsList() {
                     {p.lastRunStatus ? (
                       <span title={p.lastRunAt ? new Date(p.lastRunAt).toLocaleString() : undefined}>
                         <StatusPill status={p.lastRunStatus} />
+                        {p.lastRunAt && <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>{timeAgo(p.lastRunAt)}</span>}
                       </span>
                     ) : (
                       <span className="muted">never run</span>

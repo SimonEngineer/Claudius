@@ -14,8 +14,10 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient("discord-webhook");
         services.AddHttpClient("slack-webhook");
         services.AddHttpClient("http-request-node");
+        services.AddHttpClient("failure-notification");
 
         services.AddScoped<IScriptDbAccess, ScriptDbAccess>();
+        services.AddScoped<Weaver.Infrastructure.Realtime.IFailureNotifier, FailureNotifier>();
         services.AddSingleton<INodeHandlerRegistry, NodeHandlerRegistry>();
         services.AddSingleton<IWorkflowExecutionEngine, WorkflowExecutionEngine>();
         services.AddSingleton<IWorkflowEventPublisher, WorkflowEventBus>();

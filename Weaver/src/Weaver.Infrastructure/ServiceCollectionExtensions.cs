@@ -59,6 +59,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IApiKeyService, ApiKeyService>();
         services.AddScoped<IAuditLogger, AuditLogger>();
         services.AddSingleton<IRunStatusPublisher, RunStatusPublisher>();
+        services.AddSingleton<ICredentialProtector, CredentialProtector>();
+        services.AddSingleton<IRunCancellationService, RunCancellationService>();
 
         services.AddHealthChecks()
             .AddCheck<PostgresHealthCheck>("postgres")

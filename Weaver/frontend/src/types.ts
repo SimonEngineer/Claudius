@@ -44,6 +44,9 @@ export interface ScrapingProject {
   maxPages: number;
   customHeaders: Record<string, string>;
   proxy: ProxyConfig;
+  scheduleCron: string | null;
+  startUrls: string[];
+  respectRobotsTxt: boolean;
   dataRetentionDays: number | null;
   rateLimitPolicyId: string | null;
   isEnabled: boolean;
@@ -137,6 +140,33 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+export interface Credential {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationSettings {
+  notifyOnScrapeFailure: boolean;
+  notifyOnWorkflowFailure: boolean;
+  emailEnabled: boolean;
+  webhookUrl: string | null;
+}
+
+export interface WorkflowRevision {
+  id: string;
+  workflowName: string;
+  nodeCount: number;
+  createdAt: string;
+}
+
+export interface CronPreview {
+  valid: boolean;
+  error: string | null;
+  nextOccurrences: string[];
+}
+
 export interface DashboardStats {
   scrapesSucceededToday: number;
   scrapesFailedToday: number;
@@ -170,6 +200,7 @@ export interface Workflow {
   name: string;
   description: string | null;
   isEnabled: boolean;
+  runRetentionDays: number | null;
   updatedAt: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];

@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Weaver.Api.Dtos;
@@ -34,4 +35,28 @@ public class AuditLogController : ControllerBase
 
         return new PagedResult<AuditLogEntryDto>(entries.Select(AuditLogEntryDto.FromEntity).ToList(), totalCount, page, pageSize);
     }
+
+    /// <summary>Downloads the user's entire audit log (not just one page) as CSV.</summary>
+    [HttpGet("export")]
+    public async Task<IActionResult> Export(CancellationToken ct)
+    {
+        var entries = await _db.AuditLogEntries.Where(e => e.OwnerUserId == UserId)
+            .OrderByDescending(e => e.CreatedAt).ToListAsync(ct);
+
+        var sb = new StringBuilder();
+        sb.Append("CreatedAt,Action,ResourceType,ResourceId,ResourceName\n");
+        foreach (var e in entries)
+        {
+            var values = new[] { e.CreatedAt.ToString("O"), e.Action.ToString(), e.ResourceType, e.ResourceId.ToString(), e.ResourceName };
+            sb.Append(string.Join(',', values.Select(Escape)));
+            sb.Append('\n');
+        }
+
+        return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "activity.csv");
+    }
+
+    private static string Escape(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r')
+            ? $"\"{value.Replace("\"", "\"\"")}\""
+            : value;
 }

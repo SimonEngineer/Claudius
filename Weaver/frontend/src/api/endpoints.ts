@@ -4,8 +4,12 @@ import type {
   ApiKey,
   AuditLogEntry,
   CreatedApiKey,
+  Credential,
+  CronPreview,
   DashboardStats,
+  NotificationSettings,
   ProxyConfig,
+  WorkflowRevision,
   FieldSelector,
   ItemSnapshot,
   NodeRun,
@@ -49,6 +53,9 @@ export const ScrapingProjectsApi = {
   duplicate: (id: string) => apiClient.post<ScrapingProject>(`/api/scraping-projects/${id}/duplicate`).then((r) => r.data),
   run: (id: string) => apiClient.post<{ jobId: string }>(`/api/scraping-projects/${id}/run`).then((r) => r.data),
   runs: (id: string) => apiClient.get<ScrapeRun[]>(`/api/scraping-projects/${id}/runs`).then((r) => r.data),
+  clearRuns: (id: string) => apiClient.delete(`/api/scraping-projects/${id}/runs`),
+  cancelRun: (id: string, runId: string) => apiClient.post(`/api/scraping-projects/${id}/runs/${runId}/cancel`),
+  deleteItem: (id: string, itemId: string) => apiClient.delete(`/api/scraping-projects/${id}/items/${itemId}`),
   items: (id: string, page = 1, pageSize = 50, runId?: string) =>
     apiClient
       .get<PagedResult<ScrapedItem>>(`/api/scraping-projects/${id}/items`, {
@@ -93,10 +100,28 @@ export const ApiKeysApi = {
 export const AuditLogApi = {
   list: (page = 1, pageSize = 50) =>
     apiClient.get<PagedResult<AuditLogEntry>>("/api/audit-log", { params: { page, pageSize } }).then((r) => r.data),
+  exportCsv: () => downloadFromApi("/api/audit-log/export", {}, "activity.csv"),
 };
 
 export const DashboardApi = {
   stats: () => apiClient.get<DashboardStats>("/api/dashboard/stats").then((r) => r.data),
+};
+
+export const CredentialsApi = {
+  list: () => apiClient.get<Credential[]>("/api/credentials").then((r) => r.data),
+  create: (name: string, value: string) => apiClient.post<Credential>("/api/credentials", { name, value }).then((r) => r.data),
+  updateValue: (id: string, value: string) => apiClient.put<Credential>(`/api/credentials/${id}`, { value }).then((r) => r.data),
+  remove: (id: string) => apiClient.delete(`/api/credentials/${id}`),
+};
+
+export const NotificationSettingsApi = {
+  get: () => apiClient.get<NotificationSettings>("/api/notification-settings").then((r) => r.data),
+  update: (settings: NotificationSettings) =>
+    apiClient.put<NotificationSettings>("/api/notification-settings", settings).then((r) => r.data),
+};
+
+export const CronApi = {
+  preview: (expression: string) => apiClient.post<CronPreview>("/api/cron/preview", { expression }).then((r) => r.data),
 };
 
 export const RateLimitPoliciesApi = {
@@ -105,6 +130,7 @@ export const RateLimitPoliciesApi = {
     apiClient.post<RateLimitPolicy>("/api/rate-limit-policies", body).then((r) => r.data),
   update: (id: string, body: UpsertRateLimitPolicyRequest) =>
     apiClient.put<RateLimitPolicy>(`/api/rate-limit-policies/${id}`, body).then((r) => r.data),
+  duplicate: (id: string) => apiClient.post<RateLimitPolicy>(`/api/rate-limit-policies/${id}/duplicate`).then((r) => r.data),
   remove: (id: string) => apiClient.delete(`/api/rate-limit-policies/${id}`),
 };
 
@@ -123,6 +149,10 @@ export const WorkflowsApi = {
   runs: (id: string) => apiClient.get<WorkflowRun[]>(`/api/workflows/${id}/runs`).then((r) => r.data),
   runDetail: (runId: string) =>
     apiClient.get<WorkflowRunDetail>(`/api/workflows/runs/${runId}`).then((r) => r.data),
+  cancelRun: (runId: string) => apiClient.post(`/api/workflows/runs/${runId}/cancel`),
+  revisions: (id: string) => apiClient.get<WorkflowRevision[]>(`/api/workflows/${id}/revisions`).then((r) => r.data),
+  restoreRevision: (id: string, revisionId: string) =>
+    apiClient.post<Workflow>(`/api/workflows/${id}/revisions/${revisionId}/restore`).then((r) => r.data),
   nodeTypes: () => apiClient.get<string[]>("/api/node-types").then((r) => r.data),
   exportWorkflow: (id: string, name: string) =>
     downloadFromApi(`/api/workflows/${id}/export`, {}, `${name}.weaver-workflow.json`),

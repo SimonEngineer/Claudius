@@ -75,6 +75,31 @@ public class RateLimitPoliciesController : ControllerBase
         return RateLimitPolicyDto.FromEntity(policy);
     }
 
+    [HttpPost("{id:guid}/duplicate")]
+    public async Task<ActionResult<RateLimitPolicyDto>> Duplicate(Guid id, CancellationToken ct)
+    {
+        var source = await _db.RateLimitPolicies.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
+        if (source is null)
+        {
+            return NotFound();
+        }
+
+        var copy = new RateLimitPolicy
+        {
+            OwnerUserId = UserId,
+            Name = $"{source.Name} (Copy)",
+            KeyScope = source.KeyScope,
+            CustomKeyTemplate = source.CustomKeyTemplate,
+            PermitLimit = source.PermitLimit,
+            WindowSeconds = source.WindowSeconds,
+            BurstCapacity = source.BurstCapacity,
+        };
+        _db.RateLimitPolicies.Add(copy);
+        _auditLogger.Record(UserId, AuditAction.Created, "RateLimitPolicy", copy.Id, copy.Name);
+        await _db.SaveChangesAsync(ct);
+        return RateLimitPolicyDto.FromEntity(copy);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {

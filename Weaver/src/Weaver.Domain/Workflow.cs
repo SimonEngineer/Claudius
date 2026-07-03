@@ -8,6 +8,10 @@ public class Workflow
     public string? Description { get; set; }
     public bool IsEnabled { get; set; } = true;
 
+    /// <summary>How many days to keep completed workflow runs before a background job purges them.
+    /// Null means keep forever.</summary>
+    public int? RunRetentionDays { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 

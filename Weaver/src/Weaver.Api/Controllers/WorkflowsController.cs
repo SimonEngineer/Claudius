@@ -60,7 +60,14 @@ public class WorkflowsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<WorkflowDto>> Create(UpsertWorkflowRequest request, CancellationToken ct)
     {
-        var workflow = new Workflow { OwnerUserId = UserId, Name = request.Name, Description = request.Description, IsEnabled = request.IsEnabled };
+        var workflow = new Workflow
+        {
+            OwnerUserId = UserId,
+            Name = request.Name,
+            Description = request.Description,
+            IsEnabled = request.IsEnabled,
+            RunRetentionDays = request.RunRetentionDays,
+        };
         ApplyGraph(workflow, request);
 
         _db.Workflows.Add(workflow);
@@ -79,9 +86,13 @@ public class WorkflowsController : ControllerBase
             return NotFound();
         }
 
+        // Snapshot the pre-edit graph so this save can be rolled back from the Revisions panel.
+        await CaptureRevisionAsync(workflow, ct);
+
         workflow.Name = request.Name;
         workflow.Description = request.Description;
         workflow.IsEnabled = request.IsEnabled;
+        workflow.RunRetentionDays = request.RunRetentionDays;
         workflow.UpdatedAt = DateTimeOffset.UtcNow;
 
         _db.WorkflowEdges.RemoveRange(workflow.Edges);
@@ -93,6 +104,26 @@ public class WorkflowsController : ControllerBase
         _auditLogger.Record(UserId, AuditAction.Updated, "Workflow", workflow.Id, workflow.Name);
         await _db.SaveChangesAsync(ct);
         return WorkflowDto.FromEntity(workflow, _protector);
+    }
+
+    private const int MaxRevisionsPerWorkflow = 20;
+
+    private async Task CaptureRevisionAsync(Workflow workflow, CancellationToken ct)
+    {
+        _db.WorkflowRevisions.Add(new WorkflowRevision
+        {
+            WorkflowId = workflow.Id,
+            OwnerUserId = UserId,
+            WorkflowName = workflow.Name,
+            SnapshotJson = System.Text.Json.JsonSerializer.Serialize(WorkflowRevisionSnapshot.FromEntity(workflow)),
+        });
+
+        var excess = await _db.WorkflowRevisions
+            .Where(r => r.WorkflowId == workflow.Id)
+            .OrderByDescending(r => r.CreatedAt)
+            .Skip(MaxRevisionsPerWorkflow - 1)
+            .ToListAsync(ct);
+        _db.WorkflowRevisions.RemoveRange(excess);
     }
 
     [HttpDelete("{id:guid}")]
@@ -299,6 +330,150 @@ public class WorkflowsController : ControllerBase
 
         var nodeRuns = await _db.NodeRuns.Where(n => n.WorkflowRunId == runId).OrderBy(n => n.StartedAt).ToListAsync(ct);
         return new WorkflowRunDetailDto(WorkflowRunDto.FromEntity(run), nodeRuns.Select(NodeRunDto.FromEntity).ToList());
+    }
+
+    [HttpGet("{id:guid}/revisions")]
+    public async Task<ActionResult<List<WorkflowRevisionDto>>> Revisions(Guid id, CancellationToken ct)
+    {
+        if (!await _db.Workflows.AnyAsync(w => w.Id == id && w.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
+        var revisions = await _db.WorkflowRevisions
+            .Where(r => r.WorkflowId == id)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+        return revisions.Select(r =>
+        {
+            int nodeCount;
+            try
+            {
+                nodeCount = System.Text.Json.JsonSerializer.Deserialize<WorkflowRevisionSnapshot>(r.SnapshotJson)?.Nodes.Count ?? 0;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                nodeCount = 0;
+            }
+            return new WorkflowRevisionDto(r.Id, r.WorkflowName, nodeCount, r.CreatedAt);
+        }).ToList();
+    }
+
+    /// <summary>Replaces the workflow's current graph with a past revision's. The pre-restore state
+    /// is snapshotted first, so a restore is itself undoable.</summary>
+    [HttpPost("{id:guid}/revisions/{revisionId:guid}/restore")]
+    public async Task<ActionResult<WorkflowDto>> RestoreRevision(Guid id, Guid revisionId, CancellationToken ct)
+    {
+        var workflow = await _db.Workflows.Include(w => w.Nodes).Include(w => w.Edges)
+            .FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
+        if (workflow is null)
+        {
+            return NotFound();
+        }
+
+        var revision = await _db.WorkflowRevisions.FirstOrDefaultAsync(r => r.Id == revisionId && r.WorkflowId == id, ct);
+        if (revision is null)
+        {
+            return NotFound();
+        }
+
+        WorkflowRevisionSnapshot? snapshot;
+        try
+        {
+            snapshot = System.Text.Json.JsonSerializer.Deserialize<WorkflowRevisionSnapshot>(revision.SnapshotJson);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            snapshot = null;
+        }
+
+        if (snapshot is null)
+        {
+            return Conflict("This revision's snapshot could not be read.");
+        }
+
+        await CaptureRevisionAsync(workflow, ct);
+
+        workflow.Name = snapshot.Name;
+        workflow.Description = snapshot.Description;
+        workflow.UpdatedAt = DateTimeOffset.UtcNow;
+
+        _db.WorkflowEdges.RemoveRange(workflow.Edges);
+        _db.WorkflowNodes.RemoveRange(workflow.Nodes);
+        workflow.Nodes.Clear();
+        workflow.Edges.Clear();
+
+        var refMap = new Dictionary<string, Guid>();
+        foreach (var n in snapshot.Nodes)
+        {
+            var newId = Guid.NewGuid();
+            refMap[n.Ref] = newId;
+            var node = new WorkflowNode
+            {
+                Id = newId,
+                WorkflowId = workflow.Id,
+                Type = n.Type,
+                Name = n.Name,
+                ConfigJson = n.ConfigJson,
+                IsDisabled = n.IsDisabled,
+                MaxRetries = n.MaxRetries,
+                RetryDelayMs = n.RetryDelayMs,
+                PositionX = n.PositionX,
+                PositionY = n.PositionY,
+            };
+            // Collection first, then DbSet -- same order as ApplyGraph. DbSet.Add first would let
+            // EF's relationship fixup insert it into workflow.Nodes, and the manual add after that
+            // would duplicate it in the response.
+            workflow.Nodes.Add(node);
+            _db.WorkflowNodes.Add(node);
+        }
+
+        foreach (var e in snapshot.Edges)
+        {
+            if (!refMap.TryGetValue(e.SourceRef, out var sourceId) || !refMap.TryGetValue(e.TargetRef, out var targetId))
+            {
+                continue;
+            }
+
+            var edge = new WorkflowEdge
+            {
+                Id = Guid.NewGuid(),
+                WorkflowId = workflow.Id,
+                SourceNodeId = sourceId,
+                SourceHandle = e.SourceHandle,
+                TargetNodeId = targetId,
+                TargetHandle = e.TargetHandle,
+            };
+            workflow.Edges.Add(edge);
+            _db.WorkflowEdges.Add(edge);
+        }
+
+        _auditLogger.Record(UserId, AuditAction.Updated, "Workflow", workflow.Id, $"{workflow.Name} (restored revision)");
+        await _db.SaveChangesAsync(ct);
+        return WorkflowDto.FromEntity(workflow, _protector);
+    }
+
+    /// <summary>Requests cancellation of a running workflow run. Broadcast to every process, so it
+    /// works whether the run executes in the Api (manual/webhook) or a Worker (cron).</summary>
+    [HttpPost("runs/{runId:guid}/cancel")]
+    public async Task<IActionResult> CancelRun(Guid runId, [FromServices] Weaver.Infrastructure.Realtime.IRunCancellationService cancellation, CancellationToken ct)
+    {
+        var run = await _db.WorkflowRuns
+            .Join(_db.Workflows.Where(w => w.OwnerUserId == UserId), r => r.WorkflowId, w => w.Id, (r, w) => r)
+            .FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run is null)
+        {
+            return NotFound();
+        }
+
+        if (run.Status is not (RunStatus.Pending or RunStatus.Running))
+        {
+            return Conflict($"Run is already {run.Status}.");
+        }
+
+        await cancellation.RequestCancelAsync(runId, ct);
+        return Accepted();
     }
 
     [HttpGet("~/api/node-types")]

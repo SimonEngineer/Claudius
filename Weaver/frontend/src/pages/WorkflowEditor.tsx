@@ -19,8 +19,10 @@ import { WorkflowsApi } from "../api/endpoints";
 import { catalogEntry, NODE_CATALOG } from "../components/nodeCatalog";
 import NodeConfigPanel from "../components/NodeConfigPanel";
 import WorkflowRunHistory from "../components/WorkflowRunHistory";
+import WorkflowRevisions from "../components/WorkflowRevisions";
 import { nodeTypes, type WeaverNodeData } from "../components/WeaverFlowNode";
 import type { UpsertWorkflowRequest, WorkflowEdge, WorkflowNode as ApiWorkflowNode } from "../types";
+import { usePageTitle } from "../utils/usePageTitle";
 
 function toRfNode(n: ApiWorkflowNode, onRun: (nodeId: string) => void): Node<WeaverNodeData> {
   return {
@@ -55,6 +57,7 @@ function snapshot(
   name: string,
   description: string,
   isEnabled: boolean,
+  runRetentionDays: number | null,
   nodes: Node<WeaverNodeData>[],
   edges: Edge[],
 ): string {
@@ -62,6 +65,7 @@ function snapshot(
     name,
     description,
     isEnabled,
+    runRetentionDays,
     nodes: nodes.map((n) => ({
       id: n.id,
       type: n.data.nodeType,
@@ -86,8 +90,10 @@ function WorkflowEditorInner() {
   const existing = useQuery({ queryKey: ["workflow", id], queryFn: () => WorkflowsApi.get(id!), enabled: !isNew });
 
   const [name, setName] = useState("New Workflow");
+  usePageTitle(name);
   const [description, setDescription] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
+  const [runRetentionDays, setRunRetentionDays] = useState<number | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<WeaverNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -95,7 +101,7 @@ function WorkflowEditorInner() {
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const workflowIdRef = useRef<string | undefined>(id);
-  const savedSnapshotRef = useRef<string>(snapshot("New Workflow", "", true, [], []));
+  const savedSnapshotRef = useRef<string>(snapshot("New Workflow", "", true, null, [], []));
 
   const runNodeMutation = useMutation({
     mutationFn: ({ nodeId }: { nodeId: string }) => WorkflowsApi.runFromNode(workflowIdRef.current!, nodeId),
@@ -120,14 +126,15 @@ function WorkflowEditorInner() {
       setName(existing.data.name);
       setDescription(existing.data.description ?? "");
       setIsEnabled(existing.data.isEnabled);
+      setRunRetentionDays(existing.data.runRetentionDays);
       setNodes(loadedNodes);
       setEdges(loadedEdges);
-      savedSnapshotRef.current = snapshot(existing.data.name, existing.data.description ?? "", existing.data.isEnabled, loadedNodes, loadedEdges);
+      savedSnapshotRef.current = snapshot(existing.data.name, existing.data.description ?? "", existing.data.isEnabled, existing.data.runRetentionDays, loadedNodes, loadedEdges);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing.data]);
 
-  const isDirty = snapshot(name, description, isEnabled, nodes, edges) !== savedSnapshotRef.current;
+  const isDirty = snapshot(name, description, isEnabled, runRetentionDays, nodes, edges) !== savedSnapshotRef.current;
 
   useEffect(() => {
     if (!isDirty) return;
@@ -145,6 +152,7 @@ function WorkflowEditorInner() {
         name,
         description,
         isEnabled,
+        runRetentionDays,
         nodes: nodes.map((n) => ({
           id: n.id,
           type: n.data.nodeType,
@@ -168,7 +176,7 @@ function WorkflowEditorInner() {
     },
     onSuccess: (saved) => {
       workflowIdRef.current = saved.id;
-      savedSnapshotRef.current = snapshot(name, description, isEnabled, nodes, edges);
+      savedSnapshotRef.current = snapshot(name, description, isEnabled, runRetentionDays, nodes, edges);
       queryClient.invalidateQueries({ queryKey: ["workflows"] });
       if (isNew) navigate(`/workflows/${saved.id}`, { replace: true });
     },
@@ -281,6 +289,18 @@ function WorkflowEditorInner() {
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" />
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 4 }} title="How many days to keep completed runs (empty = forever)">
+            <span className="muted" style={{ fontSize: 12 }}>keep runs</span>
+            <input
+              type="number"
+              min={1}
+              placeholder="∞"
+              style={{ width: 56 }}
+              value={runRetentionDays ?? ""}
+              onChange={(e) => setRunRetentionDays(e.target.value === "" ? null : Math.max(1, Number(e.target.value)))}
+            />
+            <span className="muted" style={{ fontSize: 12 }}>days</span>
+          </label>
           <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} /> enabled
           </label>
@@ -362,7 +382,12 @@ function WorkflowEditorInner() {
         </div>
       </div>
 
-      {!isNew && <div style={{ marginTop: 16 }}><WorkflowRunHistory workflowId={id!} /></div>}
+      {!isNew && (
+        <div style={{ marginTop: 16 }}>
+          <WorkflowRunHistory workflowId={id!} />
+          <WorkflowRevisions workflowId={id!} />
+        </div>
+      )}
     </div>
   );
 }

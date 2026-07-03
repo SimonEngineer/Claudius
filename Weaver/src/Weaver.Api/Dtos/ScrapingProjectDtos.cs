@@ -48,6 +48,9 @@ public record ScrapingProjectDto(
     int MaxPages,
     Dictionary<string, string> CustomHeaders,
     ProxyConfigDto Proxy,
+    string? ScheduleCron,
+    List<string> StartUrls,
+    bool RespectRobotsTxt,
     int? DataRetentionDays,
     Guid? RateLimitPolicyId,
     bool IsEnabled,
@@ -61,10 +64,23 @@ public record ScrapingProjectDto(
         p.Id, p.Name, p.Description, p.StartUrl, p.Mode, p.RenderMode, p.ItemSelector, p.PaginationStrategy,
         p.NextPageSelector, p.PageUrlTemplate, p.MaxPages, Weaver.Scraping.CustomHeadersParser.Parse(p.CustomHeadersJson),
         ProxyConfigDto.FromStoredJson(protector, p.ProxyConfigJson),
+        p.ScheduleCron, ParseStartUrls(p.StartUrlsJson), p.RespectRobotsTxt,
         p.DataRetentionDays, p.RateLimitPolicyId, p.IsEnabled,
         p.CreatedAt, p.UpdatedAt,
         p.Fields.OrderBy(f => f.Order).Select(f => new FieldSelectorDto(
             f.Id, f.Name, f.Selector, f.Attribute, f.AttributeName, f.ResolveUrl, f.IsKey, f.Required, f.Order)).ToList());
+
+    private static List<string> ParseStartUrls(string? json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json ?? "[]") ?? new List<string>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return new List<string>();
+        }
+    }
 }
 
 public record UpsertScrapingProjectRequest(
@@ -83,7 +99,10 @@ public record UpsertScrapingProjectRequest(
     int? DataRetentionDays,
     Guid? RateLimitPolicyId,
     bool IsEnabled,
-    List<FieldSelectorDto> Fields);
+    List<FieldSelectorDto> Fields,
+    string? ScheduleCron = null,
+    List<string>? StartUrls = null,
+    bool RespectRobotsTxt = false);
 
 public record ScrapeRunDto(
     Guid Id,

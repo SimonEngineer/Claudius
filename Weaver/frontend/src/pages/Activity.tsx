@@ -3,8 +3,10 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AuditLogApi } from "../api/endpoints";
 import { resourceLink } from "../utils/resourceLink";
+import { usePageTitle } from "../utils/usePageTitle";
 
 export default function Activity() {
+  usePageTitle("Activity");
   const [page, setPage] = useState(1);
   const pageSize = 50;
   const log = useQuery({ queryKey: ["audit-log", page], queryFn: () => AuditLogApi.list(page, pageSize) });
@@ -13,6 +15,7 @@ export default function Activity() {
     <div>
       <div className="page-header">
         <h2>Activity</h2>
+        <button onClick={() => AuditLogApi.exportCsv()}>Export CSV</button>
       </div>
 
       <div className="card">

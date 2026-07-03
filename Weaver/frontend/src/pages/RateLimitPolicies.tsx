@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { RateLimitPoliciesApi } from "../api/endpoints";
 import type { RateLimitKeyScope, UpsertRateLimitPolicyRequest } from "../types";
+import { usePageTitle } from "../utils/usePageTitle";
 
 const emptyForm: UpsertRateLimitPolicyRequest = {
   name: "",
@@ -13,6 +14,7 @@ const emptyForm: UpsertRateLimitPolicyRequest = {
 };
 
 export default function RateLimitPolicies() {
+  usePageTitle("Rate Limits");
   const queryClient = useQueryClient();
   const policies = useQuery({ queryKey: ["rate-limit-policies"], queryFn: RateLimitPoliciesApi.list });
   const [form, setForm] = useState<UpsertRateLimitPolicyRequest>(emptyForm);
@@ -27,6 +29,11 @@ export default function RateLimitPolicies() {
 
   const deleteMutation = useMutation({
     mutationFn: RateLimitPoliciesApi.remove,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rate-limit-policies"] }),
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: RateLimitPoliciesApi.duplicate,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rate-limit-policies"] }),
   });
 
@@ -121,7 +128,10 @@ export default function RateLimitPolicies() {
                   <td>{p.permitLimit}</td>
                   <td>{p.windowSeconds}s</td>
                   <td>{p.burstCapacity}</td>
-                  <td>
+                  <td style={{ display: "flex", gap: 6 }}>
+                    <button disabled={duplicateMutation.isPending} onClick={() => duplicateMutation.mutate(p.id)}>
+                      Duplicate
+                    </button>
                     <button
                       className="danger"
                       onClick={() => {

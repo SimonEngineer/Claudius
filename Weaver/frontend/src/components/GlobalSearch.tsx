@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ScrapingProjectsApi, WorkflowsApi } from "../api/endpoints";
 
@@ -7,6 +7,20 @@ export default function GlobalSearch() {
   const navigate = useNavigate();
   const [term, setTerm] = useState("");
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      // Don't hijack "/" while the user is typing somewhere else.
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      e.preventDefault();
+      inputRef.current?.focus();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // Reuses whatever's already cached from the list pages -- no dedicated search endpoint needed
   // for a dataset this small.
@@ -34,7 +48,8 @@ export default function GlobalSearch() {
   return (
     <div style={{ position: "relative", marginBottom: 16 }}>
       <input
-        placeholder="Search projects & workflows…"
+        ref={inputRef}
+        placeholder="Search…  ( / )"
         value={term}
         onChange={(e) => setTerm(e.target.value)}
         onFocus={() => setFocused(true)}

@@ -31,13 +31,50 @@ public class WorkflowEngineHarness
             new ScopeFactoryWithProtector(_provider),
             registry,
             NullLogger<WorkflowExecutionEngine>.Instance,
-            new NoOpRunStatusPublisher());
+            new NoOpRunStatusPublisher(),
+            new LocalRunCancellationService());
     }
 
     private class NoOpRunStatusPublisher : IRunStatusPublisher
     {
         public Task PublishAsync(Guid ownerUserId, string kind, Guid runId, string status, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    /// <summary>In-process-only stand-in for the Redis-backed cancellation broadcaster.</summary>
+    private class LocalRunCancellationService : IRunCancellationService
+    {
+        private readonly Dictionary<Guid, CancellationTokenSource> _active = new();
+
+        public RunCancellationRegistration Register(Guid runId, CancellationToken upstream)
+        {
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(upstream);
+            lock (_active)
+            {
+                _active[runId] = cts;
+            }
+
+            return new RunCancellationRegistration(cts.Token, () =>
+            {
+                lock (_active)
+                {
+                    _active.Remove(runId);
+                }
+                cts.Dispose();
+            });
+        }
+
+        public Task RequestCancelAsync(Guid runId, CancellationToken cancellationToken = default)
+        {
+            lock (_active)
+            {
+                if (_active.TryGetValue(runId, out var cts))
+                {
+                    cts.Cancel();
+                }
+            }
+            return Task.CompletedTask;
+        }
     }
 
     public void Seed(Action<WeaverDbContext> seed)
@@ -95,10 +132,23 @@ public class WorkflowEngineHarness
                 _protector = protector;
             }
 
+            private readonly PassthroughCredentialProtector _credentialProtector = new();
+            private readonly NoOpFailureNotifier _failureNotifier = new();
+
             public object? GetService(Type serviceType) =>
-                serviceType == typeof(Weaver.Infrastructure.Security.ISensitiveConfigProtector)
-                    ? _protector
-                    : _inner.GetService(serviceType);
+                serviceType == typeof(Weaver.Infrastructure.Security.ISensitiveConfigProtector) ? _protector
+                : serviceType == typeof(Weaver.Infrastructure.Security.ICredentialProtector) ? _credentialProtector
+                : serviceType == typeof(IFailureNotifier) ? _failureNotifier
+                : _inner.GetService(serviceType);
+
+            private class NoOpFailureNotifier : IFailureNotifier
+            {
+                public Task NotifyScrapeFailureAsync(Guid ownerUserId, string projectName, Guid runId, string? error, CancellationToken cancellationToken = default) =>
+                    Task.CompletedTask;
+
+                public Task NotifyWorkflowFailureAsync(Guid ownerUserId, string workflowName, Guid runId, string? error, CancellationToken cancellationToken = default) =>
+                    Task.CompletedTask;
+            }
         }
     }
 }

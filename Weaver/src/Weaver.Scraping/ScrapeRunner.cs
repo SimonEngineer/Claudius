@@ -26,13 +26,19 @@ public class ScrapeRunner
     private readonly ScraperEngine _engine;
     private readonly IWorkflowEventPublisher _events;
     private readonly IRunStatusPublisher _runStatus;
+    private readonly IRunCancellationService _cancellation;
+    private readonly IFailureNotifier _failureNotifier;
 
-    public ScrapeRunner(WeaverDbContext db, ScraperEngine engine, IWorkflowEventPublisher events, IRunStatusPublisher runStatus)
+    public ScrapeRunner(
+        WeaverDbContext db, ScraperEngine engine, IWorkflowEventPublisher events, IRunStatusPublisher runStatus,
+        IRunCancellationService cancellation, IFailureNotifier failureNotifier)
     {
         _db = db;
         _engine = engine;
         _events = events;
         _runStatus = runStatus;
+        _cancellation = cancellation;
+        _failureNotifier = failureNotifier;
     }
 
     public async Task<ScrapeRun> ExecuteAsync(Guid scrapingProjectId, TriggerKind triggeredBy, Guid? workflowRunId, CancellationToken cancellationToken = default)
@@ -55,7 +61,20 @@ public class ScrapeRunner
         await _db.SaveChangesAsync(cancellationToken);
         await _runStatus.PublishAsync(project.OwnerUserId, "scrape", run.Id, run.Status.ToString(), cancellationToken);
 
-        var result = await _engine.RunAsync(project, cancellationToken);
+        using var cancelRegistration = _cancellation.Register(run.Id, cancellationToken);
+        ScrapeResult result;
+        try
+        {
+            result = await _engine.RunAsync(project, cancelRegistration.Token);
+        }
+        catch (OperationCanceledException) when (cancelRegistration.Token.IsCancellationRequested)
+        {
+            run.Status = RunStatus.Cancelled;
+            run.CompletedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(CancellationToken.None);
+            await _runStatus.PublishAsync(project.OwnerUserId, "scrape", run.Id, run.Status.ToString(), CancellationToken.None);
+            return run;
+        }
 
         run.PagesCrawled = result.PagesCrawled;
         run.ItemsFound = result.Items.Count;
@@ -68,6 +87,7 @@ public class ScrapeRunner
             await _db.SaveChangesAsync(cancellationToken);
             await _runStatus.PublishAsync(project.OwnerUserId, "scrape", run.Id, run.Status.ToString(), cancellationToken);
             await _events.PublishAsync(RunFailedEvent, new { ScrapingProjectId = project.Id, RunId = run.Id, result.ErrorMessage }, cancellationToken);
+            await _failureNotifier.NotifyScrapeFailureAsync(project.OwnerUserId, project.Name, run.Id, result.ErrorMessage, cancellationToken);
             return run;
         }
 
@@ -77,6 +97,10 @@ public class ScrapeRunner
         run.ErrorMessage = result.ErrorMessage;
         await _db.SaveChangesAsync(cancellationToken);
         await _runStatus.PublishAsync(project.OwnerUserId, "scrape", run.Id, run.Status.ToString(), cancellationToken);
+        if (run.Status == RunStatus.Failed)
+        {
+            await _failureNotifier.NotifyScrapeFailureAsync(project.OwnerUserId, project.Name, run.Id, result.ErrorMessage, cancellationToken);
+        }
 
         await _events.PublishAsync(RunCompletedEvent, new
         {

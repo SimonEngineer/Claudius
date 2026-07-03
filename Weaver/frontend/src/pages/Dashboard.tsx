@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 import { DashboardApi, ScrapingProjectsApi, WorkflowsApi } from "../api/endpoints";
 import StatusPill from "../components/StatusPill";
 import { resourceLink } from "../utils/resourceLink";
+import { usePageTitle } from "../utils/usePageTitle";
 
 export default function Dashboard() {
+  usePageTitle("Dashboard");
   const projects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list });
   const workflows = useQuery({ queryKey: ["workflows"], queryFn: WorkflowsApi.list });
   const stats = useQuery({ queryKey: ["dashboard-stats"], queryFn: DashboardApi.stats });

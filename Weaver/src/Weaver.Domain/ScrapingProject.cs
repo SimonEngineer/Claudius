@@ -35,6 +35,18 @@ public class ScrapingProject
     /// ProxyConfig; the password field is encrypted at rest). Null/disabled means no proxy.</summary>
     public string ProxyConfigJson { get; set; } = "{}";
 
+    /// <summary>Optional cron expression; when set (and the project is enabled) the worker enqueues
+    /// a scrape run on this cadence, without needing a workflow.</summary>
+    public string? ScheduleCron { get; set; }
+
+    /// <summary>Extra seed URLs (JSON string array) crawled after StartUrl, each with the same
+    /// pagination rules. Empty array means StartUrl only.</summary>
+    public string StartUrlsJson { get; set; } = "[]";
+
+    /// <summary>When true, the engine fetches the target host's robots.txt and skips URLs its
+    /// rules disallow for our user-agent.</summary>
+    public bool RespectRobotsTxt { get; set; }
+
     /// <summary>How many days to keep completed scrape runs and their items before a background job
     /// purges them. Null means keep forever.</summary>
     public int? DataRetentionDays { get; set; }

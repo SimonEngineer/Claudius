@@ -12,6 +12,8 @@ public class WeaverDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
+    public DbSet<Credential> Credentials => Set<Credential>();
+    public DbSet<NotificationSettings> NotificationSettings => Set<NotificationSettings>();
 
     public DbSet<ScrapingProject> ScrapingProjects => Set<ScrapingProject>();
     public DbSet<FieldSelector> FieldSelectors => Set<FieldSelector>();
@@ -25,6 +27,7 @@ public class WeaverDbContext : DbContext
     public DbSet<WorkflowEdge> WorkflowEdges => Set<WorkflowEdge>();
     public DbSet<WorkflowRun> WorkflowRuns => Set<WorkflowRun>();
     public DbSet<NodeRun> NodeRuns => Set<NodeRun>();
+    public DbSet<WorkflowRevision> WorkflowRevisions => Set<WorkflowRevision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

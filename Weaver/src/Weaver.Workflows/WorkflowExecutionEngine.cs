@@ -38,12 +38,20 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
     private readonly ILogger<WorkflowExecutionEngine> _logger;
     private readonly IRunStatusPublisher _runStatus;
 
-    public WorkflowExecutionEngine(IServiceScopeFactory scopeFactory, INodeHandlerRegistry registry, ILogger<WorkflowExecutionEngine> logger, IRunStatusPublisher runStatus)
+    private readonly IRunCancellationService _cancellation;
+
+    public WorkflowExecutionEngine(
+        IServiceScopeFactory scopeFactory,
+        INodeHandlerRegistry registry,
+        ILogger<WorkflowExecutionEngine> logger,
+        IRunStatusPublisher runStatus,
+        IRunCancellationService cancellation)
     {
         _scopeFactory = scopeFactory;
         _registry = registry;
         _logger = logger;
         _runStatus = runStatus;
+        _cancellation = cancellation;
     }
 
     public async Task<Guid> StartRunFromNodeAsync(
@@ -79,11 +87,17 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
         await _runStatus.PublishAsync(workflow.OwnerUserId, "workflow", run.Id, run.Status.ToString(), cancellationToken);
 
         var runFailed = false;
+        var cancelled = false;
 
+        using var cancelRegistration = _cancellation.Register(run.Id, cancellationToken);
         try
         {
-            runFailed = await new GraphExecution(scope.ServiceProvider, db, workflow, _registry, _logger, run, cancellationToken)
+            runFailed = await new GraphExecution(scope.ServiceProvider, db, workflow, _registry, _logger, run, cancelRegistration.Token)
                 .RunAsync(triggerNode, payload);
+        }
+        catch (OperationCanceledException) when (cancelRegistration.Token.IsCancellationRequested)
+        {
+            cancelled = true;
         }
         catch (Exception ex)
         {
@@ -92,10 +106,17 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
             runFailed = true;
         }
 
-        run.Status = runFailed ? RunStatus.Failed : RunStatus.Succeeded;
+        run.Status = cancelled ? RunStatus.Cancelled : runFailed ? RunStatus.Failed : RunStatus.Succeeded;
         run.CompletedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        await _runStatus.PublishAsync(workflow.OwnerUserId, "workflow", run.Id, run.Status.ToString(), cancellationToken);
+        // Save with the outer token, not the run's -- a cancelled run must still persist its final state.
+        await db.SaveChangesAsync(CancellationToken.None);
+        await _runStatus.PublishAsync(workflow.OwnerUserId, "workflow", run.Id, run.Status.ToString(), CancellationToken.None);
+
+        if (run.Status == RunStatus.Failed)
+        {
+            var failureNotifier = scope.ServiceProvider.GetRequiredService<IFailureNotifier>();
+            await failureNotifier.NotifyWorkflowFailureAsync(workflow.OwnerUserId, workflow.Name, run.Id, run.ErrorMessage, CancellationToken.None);
+        }
 
         return run.Id;
     }
@@ -117,6 +138,7 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
         private readonly HashSet<Guid> _prunedEdgeIds = new();
         private readonly HashSet<Guid> _resolvedNodeIds = new();
         private readonly Dictionary<string, JsonNode?> _allNodeOutputs = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _secrets = new(StringComparer.OrdinalIgnoreCase);
         private bool _anyFailure;
 
         public GraphExecution(IServiceProvider services, WeaverDbContext db, Workflow workflow, INodeHandlerRegistry registry, ILogger logger, WorkflowRun run, CancellationToken cancellationToken)
@@ -134,6 +156,23 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
 
         public async Task<bool> RunAsync(WorkflowNode triggerNode, JsonNode? triggerPayload)
         {
+            // Decrypt the owner's stored credentials once per run, and only when some node config
+            // actually references {{secrets.*}} -- most runs never touch the credentials table.
+            if (_workflow.Nodes.Any(n => SecretsTemplate.ContainsSecretTokens(n.ConfigJson)))
+            {
+                var credentialProtector = _services.GetRequiredService<ICredentialProtector>();
+                var credentials = await _db.Credentials
+                    .Where(c => c.OwnerUserId == _workflow.OwnerUserId)
+                    .ToListAsync(_cancellationToken);
+                foreach (var credential in credentials)
+                {
+                    if (credentialProtector.Decrypt(credential.EncryptedValue) is { } value)
+                    {
+                        _secrets[credential.Name] = value;
+                    }
+                }
+            }
+
             var queue = new Queue<Guid>();
             queue.Enqueue(triggerNode.Id);
             var scheduled = new HashSet<Guid> { triggerNode.Id };
@@ -244,6 +283,7 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
                         var protector = _services.GetRequiredService<ISensitiveConfigProtector>();
                         var decryptedConfigJson = string.IsNullOrWhiteSpace(node.ConfigJson) ? null : protector.DecryptForUse(node.Type, node.ConfigJson);
                         var config = decryptedConfigJson is null ? null : JsonNode.Parse(decryptedConfigJson);
+                        config = SecretsTemplate.Resolve(config, name => _secrets.GetValueOrDefault(name));
                         var context = new NodeExecutionContext
                         {
                             WorkflowRunId = _run.Id,
@@ -257,6 +297,16 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
                             CancellationToken = _cancellationToken,
                         };
                         result = await handler.ExecuteAsync(context);
+                    }
+                    catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
+                    {
+                        // Run was cancelled mid-node: record this node as Cancelled (not Failed)
+                        // and let the cancellation propagate to end the whole run.
+                        nodeRun.Status = RunStatus.Cancelled;
+                        nodeRun.CompletedAt = DateTimeOffset.UtcNow;
+                        nodeRun.LogText = logLines.Count > 0 ? string.Join('\n', logLines) : null;
+                        await _db.SaveChangesAsync(CancellationToken.None);
+                        throw;
                     }
                     catch (Exception ex)
                     {

@@ -62,12 +62,35 @@ public class ScrapingProjectsController : ControllerBase
         return project is null ? NotFound() : ScrapingProjectDto.FromEntity(project, _protector);
     }
 
+    private static string? ValidateSchedule(string? scheduleCron)
+    {
+        if (string.IsNullOrWhiteSpace(scheduleCron))
+        {
+            return null;
+        }
+
+        try
+        {
+            Cronos.CronExpression.Parse(scheduleCron.Trim());
+            return null;
+        }
+        catch (Cronos.CronFormatException ex)
+        {
+            return $"Invalid schedule cron expression: {ex.Message}";
+        }
+    }
+
     [HttpPost]
     public async Task<ActionResult<ScrapingProjectDto>> Create(UpsertScrapingProjectRequest request, CancellationToken ct)
     {
         if (!await OwnsPolicyOrNullAsync(request.RateLimitPolicyId, ct))
         {
             return BadRequest("Unknown rate limit policy.");
+        }
+
+        if (ValidateSchedule(request.ScheduleCron) is { } scheduleError)
+        {
+            return BadRequest(scheduleError);
         }
 
         var project = new ScrapingProject
@@ -85,6 +108,9 @@ public class ScrapingProjectsController : ControllerBase
             MaxPages = request.MaxPages,
             CustomHeadersJson = JsonSerializer.Serialize(request.CustomHeaders ?? new Dictionary<string, string>()),
             ProxyConfigJson = (request.Proxy ?? ProxyConfigDto.Disabled).ToEncryptedJson(_protector),
+            ScheduleCron = string.IsNullOrWhiteSpace(request.ScheduleCron) ? null : request.ScheduleCron.Trim(),
+            StartUrlsJson = JsonSerializer.Serialize(request.StartUrls ?? new List<string>()),
+            RespectRobotsTxt = request.RespectRobotsTxt,
             DataRetentionDays = request.DataRetentionDays,
             RateLimitPolicyId = request.RateLimitPolicyId,
             IsEnabled = request.IsEnabled,
@@ -111,6 +137,11 @@ public class ScrapingProjectsController : ControllerBase
             return BadRequest("Unknown rate limit policy.");
         }
 
+        if (ValidateSchedule(request.ScheduleCron) is { } scheduleError)
+        {
+            return BadRequest(scheduleError);
+        }
+
         project.Name = request.Name;
         project.Description = request.Description;
         project.StartUrl = request.StartUrl;
@@ -123,6 +154,9 @@ public class ScrapingProjectsController : ControllerBase
         project.MaxPages = request.MaxPages;
         project.CustomHeadersJson = JsonSerializer.Serialize(request.CustomHeaders ?? new Dictionary<string, string>());
         project.ProxyConfigJson = (request.Proxy ?? ProxyConfigDto.Disabled).ToEncryptedJson(_protector);
+        project.ScheduleCron = string.IsNullOrWhiteSpace(request.ScheduleCron) ? null : request.ScheduleCron.Trim();
+        project.StartUrlsJson = JsonSerializer.Serialize(request.StartUrls ?? new List<string>());
+        project.RespectRobotsTxt = request.RespectRobotsTxt;
         project.DataRetentionDays = request.DataRetentionDays;
         project.RateLimitPolicyId = request.RateLimitPolicyId;
         project.IsEnabled = request.IsEnabled;
@@ -176,6 +210,10 @@ public class ScrapingProjectsController : ControllerBase
             MaxPages = source.MaxPages,
             CustomHeadersJson = source.CustomHeadersJson,
             ProxyConfigJson = source.ProxyConfigJson,
+            // Deliberately NOT copying ScheduleCron -- a duplicated project silently scraping on
+            // the original's schedule is the same trap as duplicating an enabled workflow.
+            StartUrlsJson = source.StartUrlsJson,
+            RespectRobotsTxt = source.RespectRobotsTxt,
             DataRetentionDays = source.DataRetentionDays,
             RateLimitPolicyId = source.RateLimitPolicyId,
             IsEnabled = source.IsEnabled,
@@ -235,6 +273,47 @@ public class ScrapingProjectsController : ControllerBase
         return runs.Select(ScrapeRunDto.FromEntity).ToList();
     }
 
+    /// <summary>Requests cancellation of a running scrape run (broadcast to whichever Worker owns it).</summary>
+    [HttpPost("{id:guid}/runs/{runId:guid}/cancel")]
+    public async Task<IActionResult> CancelRun(
+        Guid id, Guid runId, [FromServices] Weaver.Infrastructure.Realtime.IRunCancellationService cancellation, CancellationToken ct)
+    {
+        var run = await _db.ScrapeRuns
+            .Join(_db.ScrapingProjects.Where(p => p.OwnerUserId == UserId), r => r.ScrapingProjectId, p => p.Id, (r, p) => r)
+            .FirstOrDefaultAsync(r => r.Id == runId && r.ScrapingProjectId == id, ct);
+        if (run is null)
+        {
+            return NotFound();
+        }
+
+        if (run.Status is not (RunStatus.Pending or RunStatus.Running))
+        {
+            return Conflict($"Run is already {run.Status}.");
+        }
+
+        await cancellation.RequestCancelAsync(runId, ct);
+        return Accepted();
+    }
+
+    /// <summary>Deletes every run and scraped item for this project. Irreversible; the project config itself is untouched.</summary>
+    [HttpDelete("{id:guid}/runs")]
+    public async Task<IActionResult> ClearRunHistory(Guid id, CancellationToken ct)
+    {
+        var project = await _db.ScrapingProjects.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        // Set-based deletes -- a project can have tens of thousands of items, so don't load them.
+        await _db.ScrapedItems.Where(i => i.ScrapingProjectId == id).ExecuteDeleteAsync(ct);
+        await _db.ScrapeRuns.Where(r => r.ScrapingProjectId == id).ExecuteDeleteAsync(ct);
+
+        _auditLogger.Record(UserId, AuditAction.Deleted, "ScrapingProjectRunHistory", project.Id, project.Name);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     /// <summary>Downloads this project's run history (not capped at 50, unlike the list view) as CSV or JSON.</summary>
     [HttpGet("{id:guid}/runs/export")]
     public async Task<IActionResult> ExportRuns(Guid id, [FromQuery] string format = "csv", CancellationToken ct = default)
@@ -277,6 +356,19 @@ public class ScrapingProjectsController : ControllerBase
         var items = await query.OrderByDescending(i => i.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         return new PagedResult<ScrapedItemDto>(items.Select(ScrapedItemDto.FromEntity).ToList(), totalCount, page, pageSize);
+    }
+
+    /// <summary>Deletes one scraped item (e.g. a junk row from a mis-tuned selector).</summary>
+    [HttpDelete("{id:guid}/items/{itemId:guid}")]
+    public async Task<IActionResult> DeleteItem(Guid id, Guid itemId, CancellationToken ct)
+    {
+        if (!await _db.ScrapingProjects.AnyAsync(p => p.Id == id && p.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
+        var deleted = await _db.ScrapedItems.Where(i => i.Id == itemId && i.ScrapingProjectId == id).ExecuteDeleteAsync(ct);
+        return deleted == 0 ? NotFound() : NoContent();
     }
 
     /// <summary>Full-text search across every extracted field value in this project's scraped items (Postgres jsonb-as-text ILIKE), across all runs.</summary>

@@ -5,9 +5,12 @@ import { RateLimitPoliciesApi, ScrapingProjectsApi } from "../api/endpoints";
 import PagePicker, { type PickedElement } from "../components/PagePicker";
 import StatusPill from "../components/StatusPill";
 import ItemHistoryModal from "../components/ItemHistoryModal";
-import { emptyProxyConfig, type FieldAttribute, type FieldSelector, type PaginationStrategy, type RenderMode, type ScrapeMode, type UpsertScrapingProjectRequest } from "../types";
+import ItemDetailModal from "../components/ItemDetailModal";
+import CronPreviewHint from "../components/CronPreviewHint";
+import { emptyProxyConfig, type FieldAttribute, type FieldSelector, type PaginationStrategy, type RenderMode, type ScrapedItem, type ScrapeMode, type UpsertScrapingProjectRequest } from "../types";
 import { formatDuration } from "../utils/duration";
 import { onRunStatusChanged } from "../realtime/runStatusConnection";
+import { usePageTitle } from "../utils/usePageTitle";
 
 const emptyForm: UpsertScrapingProjectRequest = {
   name: "",
@@ -22,6 +25,9 @@ const emptyForm: UpsertScrapingProjectRequest = {
   maxPages: 20,
   customHeaders: {},
   proxy: emptyProxyConfig,
+  scheduleCron: null,
+  startUrls: [],
+  respectRobotsTxt: false,
   dataRetentionDays: null,
   rateLimitPolicyId: null,
   isEnabled: true,
@@ -69,9 +75,9 @@ export default function ScrapingProjectEditor() {
     });
   }, [isNew, id, queryClient]);
   const [itemsPage, setItemsPage] = useState(1);
-  const itemsPageSize = 20;
+  const [itemsPageSize, setItemsPageSize] = useState(20);
   const items = useQuery({
-    queryKey: ["scraping-project-items", id, itemsPage],
+    queryKey: ["scraping-project-items", id, itemsPage, itemsPageSize],
     queryFn: () => ScrapingProjectsApi.items(id!, itemsPage, itemsPageSize),
     enabled: !isNew,
   });
@@ -83,7 +89,7 @@ export default function ScrapingProjectEditor() {
   }, [itemSearchInput]);
   useEffect(() => setItemsPage(1), [itemSearchTerm]);
   const itemSearch = useQuery({
-    queryKey: ["scraping-project-items-search", id, itemSearchTerm, itemsPage],
+    queryKey: ["scraping-project-items-search", id, itemSearchTerm, itemsPage, itemsPageSize],
     queryFn: () => ScrapingProjectsApi.searchItems(id!, itemSearchTerm, itemsPage, itemsPageSize),
     enabled: !isNew && itemSearchTerm.length > 0,
   });
@@ -93,6 +99,7 @@ export default function ScrapingProjectEditor() {
   const [historyItemKey, setHistoryItemKey] = useState<string | null>(null);
 
   const [form, setForm] = useState<UpsertScrapingProjectRequest>(emptyForm);
+  usePageTitle(isNew ? "New Project" : form.name || "Project");
   const [previewUrl, setPreviewUrl] = useState("");
   const [pickTarget, setPickTarget] = useState<PickTarget>(null);
   const [headerRows, setHeaderRows] = useState<{ key: string; value: string }[]>([]);
@@ -126,6 +133,30 @@ export default function ScrapingProjectEditor() {
   const runMutation = useMutation({
     mutationFn: () => ScrapingProjectsApi.run(id!),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-project-runs", id] }),
+  });
+
+  const clearRunsMutation = useMutation({
+    mutationFn: () => ScrapingProjectsApi.clearRuns(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scraping-project-runs", id] });
+      queryClient.invalidateQueries({ queryKey: ["scraping-project-items", id] });
+      queryClient.invalidateQueries({ queryKey: ["scraping-projects"] });
+    },
+  });
+
+  const cancelRunMutation = useMutation({
+    mutationFn: (runId: string) => ScrapingProjectsApi.cancelRun(id!, runId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-project-runs", id] }),
+  });
+
+  const [detailItem, setDetailItem] = useState<ScrapedItem | null>(null);
+  const deleteItemMutation = useMutation({
+    mutationFn: (itemId: string) => ScrapingProjectsApi.deleteItem(id!, itemId),
+    onSuccess: () => {
+      setDetailItem(null);
+      queryClient.invalidateQueries({ queryKey: ["scraping-project-items", id] });
+      queryClient.invalidateQueries({ queryKey: ["scraping-project-items-search", id] });
+    },
   });
 
   useEffect(() => {
@@ -409,6 +440,44 @@ export default function ScrapingProjectEditor() {
           </div>
 
           <div className="card">
+            <h3 style={{ marginTop: 0, fontSize: 14 }}>Schedule & crawl behavior</h3>
+            <div className="row">
+              <div className="field">
+                <label>Schedule (cron, UTC — optional)</label>
+                <input
+                  className="mono"
+                  placeholder="*/30 * * * *"
+                  value={form.scheduleCron ?? ""}
+                  onChange={(e) => setForm({ ...form, scheduleCron: e.target.value === "" ? null : e.target.value })}
+                />
+                <CronPreviewHint expression={form.scheduleCron ?? ""} />
+              </div>
+              <div className="field">
+                <label>Extra start URLs (one per line)</label>
+                <textarea
+                  className="mono"
+                  rows={3}
+                  value={form.startUrls.join("\n")}
+                  onChange={(e) =>
+                    setForm({ ...form, startUrls: e.target.value.split("\n").map((u) => u.trim()).filter((u) => u !== "") })
+                  }
+                />
+                <p className="muted" style={{ fontSize: 12 }}>
+                  Crawled after the main start URL, each with the same pagination rules.
+                </p>
+              </div>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={form.respectRobotsTxt}
+                onChange={(e) => setForm({ ...form, respectRobotsTxt: e.target.checked })}
+              />
+              <span className="muted">Respect robots.txt (skip URLs the site disallows for scrapers)</span>
+            </label>
+          </div>
+
+          <div className="card">
             <div className="page-header">
               <h3 style={{ margin: 0, fontSize: 14 }}>Custom HTTP headers</h3>
               <button onClick={() => updateHeaderRows([...headerRows, { key: "", value: "" }])}>+ Add header</button>
@@ -674,6 +743,16 @@ export default function ScrapingProjectEditor() {
                 <h3 style={{ margin: 0, fontSize: 14 }}>Recent runs</h3>
                 {runs.data && runs.data.length > 0 && (
                   <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      className="danger"
+                      disabled={clearRunsMutation.isPending}
+                      onClick={() => {
+                        if (confirm("Delete ALL runs and scraped items for this project? This can't be undone."))
+                          clearRunsMutation.mutate();
+                      }}
+                    >
+                      Clear history
+                    </button>
                     <button onClick={() => ScrapingProjectsApi.exportRuns(id!, "csv")}>Export CSV</button>
                     <button onClick={() => ScrapingProjectsApi.exportRuns(id!, "json")}>Export JSON</button>
                   </div>
@@ -690,6 +769,7 @@ export default function ScrapingProjectEditor() {
                       <th>Changed</th>
                       <th>Started</th>
                       <th>Duration</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -704,6 +784,16 @@ export default function ScrapingProjectEditor() {
                         <td>{r.itemsChanged}</td>
                         <td className="muted">{r.startedAt ? new Date(r.startedAt).toLocaleString() : "-"}</td>
                         <td className="muted">{formatDuration(r.startedAt, r.completedAt) ?? "-"}</td>
+                        <td>
+                          {(r.status === "Running" || r.status === "Pending") && (
+                            <button
+                              disabled={cancelRunMutation.isPending}
+                              onClick={() => cancelRunMutation.mutate(r.id)}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -724,6 +814,18 @@ export default function ScrapingProjectEditor() {
                   Scraped items ({itemSearchTerm ? `${displayedItems?.totalCount ?? 0} matching` : items.data.totalCount})
                 </h3>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select
+                    value={itemsPageSize}
+                    title="Items per page"
+                    onChange={(e) => {
+                      setItemsPageSize(Number(e.target.value));
+                      setItemsPage(1);
+                    }}
+                  >
+                    <option value={20}>20 / page</option>
+                    <option value={50}>50 / page</option>
+                    <option value={100}>100 / page</option>
+                  </select>
                   <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as "csv" | "json")}>
                     <option value="csv">CSV</option>
                     <option value="json">JSON</option>
@@ -764,7 +866,8 @@ export default function ScrapingProjectEditor() {
                             {item.data[c] ?? ""}
                           </td>
                         ))}
-                        <td>
+                        <td style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => setDetailItem(item)}>View</button>
                           <button onClick={() => setHistoryItemKey(item.itemKey)}>History</button>
                         </td>
                       </tr>
@@ -814,6 +917,13 @@ export default function ScrapingProjectEditor() {
 
       {historyItemKey && (
         <ItemHistoryModal scrapingProjectId={id!} itemKey={historyItemKey} onClose={() => setHistoryItemKey(null)} />
+      )}
+      {detailItem && (
+        <ItemDetailModal
+          item={detailItem}
+          onDelete={() => deleteItemMutation.mutate(detailItem.id)}
+          onClose={() => setDetailItem(null)}
+        />
       )}
     </div>
   );

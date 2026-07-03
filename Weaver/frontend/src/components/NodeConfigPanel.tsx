@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ScrapingProjectsApi } from "../api/endpoints";
 import { apiBaseUrl } from "../api/client";
+import CronPreviewHint from "./CronPreviewHint";
 
 interface Props {
   workflowId?: string;
@@ -85,13 +86,16 @@ export default function NodeConfigPanel({
       )}
 
       {nodeType === "trigger.cron" && (
-        <TextField
-          label="Cron expression"
-          mono
-          value={(config.cronExpression as string) ?? ""}
-          onChange={(v) => setConfig({ cronExpression: v })}
-          placeholder="*/5 * * * *"
-        />
+        <>
+          <TextField
+            label="Cron expression"
+            mono
+            value={(config.cronExpression as string) ?? ""}
+            onChange={(v) => setConfig({ cronExpression: v })}
+            placeholder="*/5 * * * *"
+          />
+          <CronPreviewHint expression={(config.cronExpression as string) ?? ""} />
+        </>
       )}
 
       {nodeType === "trigger.http" && (
