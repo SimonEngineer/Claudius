@@ -117,6 +117,7 @@ export default function RateLimitPolicies() {
                 <th>Limit</th>
                 <th>Window</th>
                 <th>Burst</th>
+                <th>Used by</th>
                 <th></th>
               </tr>
             </thead>
@@ -128,6 +129,7 @@ export default function RateLimitPolicies() {
                   <td>{p.permitLimit}</td>
                   <td>{p.windowSeconds}s</td>
                   <td>{p.burstCapacity}</td>
+                  <td className="muted">{p.usedByProjects > 0 ? `${p.usedByProjects} project(s)` : "unused"}</td>
                   <td style={{ display: "flex", gap: 6 }}>
                     <button disabled={duplicateMutation.isPending} onClick={() => duplicateMutation.mutate(p.id)}>
                       Duplicate

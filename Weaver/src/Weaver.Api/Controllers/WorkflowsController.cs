@@ -332,6 +332,81 @@ public class WorkflowsController : ControllerBase
         return new WorkflowRunDetailDto(WorkflowRunDto.FromEntity(run), nodeRuns.Select(NodeRunDto.FromEntity).ToList());
     }
 
+    /// <summary>Flips IsEnabled without a full graph round-trip (the list rows' quick toggle).</summary>
+    [HttpPost("{id:guid}/toggle-enabled")]
+    public async Task<ActionResult<object>> ToggleEnabled(Guid id, CancellationToken ct)
+    {
+        var workflow = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
+        if (workflow is null)
+        {
+            return NotFound();
+        }
+
+        workflow.IsEnabled = !workflow.IsEnabled;
+        workflow.UpdatedAt = DateTimeOffset.UtcNow;
+        _auditLogger.Record(UserId, AuditAction.Updated, "Workflow", workflow.Id, $"{workflow.Name} ({(workflow.IsEnabled ? "enabled" : "disabled")})");
+        await _db.SaveChangesAsync(ct);
+        return new { workflow.IsEnabled };
+    }
+
+    /// <summary>Deletes every run (and their node runs) for this workflow. Irreversible.</summary>
+    [HttpDelete("{id:guid}/runs")]
+    public async Task<IActionResult> ClearRunHistory(Guid id, CancellationToken ct)
+    {
+        var workflow = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.OwnerUserId == UserId, ct);
+        if (workflow is null)
+        {
+            return NotFound();
+        }
+
+        await _db.NodeRuns.Where(n => _db.WorkflowRuns.Any(r => r.Id == n.WorkflowRunId && r.WorkflowId == id)).ExecuteDeleteAsync(ct);
+        await _db.WorkflowRuns.Where(r => r.WorkflowId == id).ExecuteDeleteAsync(ct);
+
+        _auditLogger.Record(UserId, AuditAction.Deleted, "WorkflowRunHistory", workflow.Id, workflow.Name);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>Starts a fresh run from the same trigger node with the same payload as a past run --
+    /// for retrying a failure after fixing the workflow, or reproducing an odd result.</summary>
+    [HttpPost("runs/{runId:guid}/replay")]
+    public async Task<ActionResult<object>> ReplayRun(Guid runId, CancellationToken ct)
+    {
+        var run = await _db.WorkflowRuns.AsNoTracking()
+            .Join(_db.Workflows.Where(w => w.OwnerUserId == UserId), r => r.WorkflowId, w => w.Id, (r, w) => r)
+            .FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run is null)
+        {
+            return NotFound();
+        }
+
+        if (run.TriggerNodeId is null)
+        {
+            return Conflict("This run predates replay support (its trigger node wasn't recorded).");
+        }
+
+        if (!await _db.WorkflowNodes.AnyAsync(n => n.Id == run.TriggerNodeId && n.WorkflowId == run.WorkflowId, ct))
+        {
+            return Conflict("The trigger node that started this run no longer exists on the workflow.");
+        }
+
+        System.Text.Json.Nodes.JsonNode? payload = null;
+        if (!string.IsNullOrWhiteSpace(run.TriggerPayloadJson) && run.TriggerPayloadJson != "null")
+        {
+            try
+            {
+                payload = System.Text.Json.Nodes.JsonNode.Parse(run.TriggerPayloadJson);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Replay with a null payload rather than refusing outright.
+            }
+        }
+
+        var newRunId = await _engine.StartRunFromNodeAsync(run.WorkflowId, run.TriggerNodeId.Value, run.TriggerKind, payload, ct);
+        return Accepted(new { runId = newRunId });
+    }
+
     [HttpGet("{id:guid}/revisions")]
     public async Task<ActionResult<List<WorkflowRevisionDto>>> Revisions(Guid id, CancellationToken ct)
     {

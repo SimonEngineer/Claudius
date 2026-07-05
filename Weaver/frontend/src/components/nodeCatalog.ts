@@ -20,6 +20,12 @@ export const NODE_CATALOG: NodeCatalogEntry[] = [
     defaultConfig: { secret: "" },
   },
   {
+    type: "trigger.feed",
+    label: "RSS/Atom Trigger",
+    description: "Fire per new feed entry",
+    defaultConfig: { feedUrl: "", intervalMinutes: 5 },
+  },
+  {
     type: "trigger.event",
     label: "Event Trigger",
     description: "Fire on a named system event",
@@ -54,6 +60,36 @@ export const NODE_CATALOG: NodeCatalogEntry[] = [
     label: "Send Slack Message",
     description: "Post to a Slack incoming webhook",
     defaultConfig: { webhookUrl: "", message: "" },
+  },
+  {
+    type: "action.sendTelegram",
+    label: "Send Telegram Message",
+    description: "Send via a Telegram bot",
+    defaultConfig: { botToken: "", chatId: "", message: "" },
+  },
+  {
+    type: "action.filterItems",
+    label: "Filter Items",
+    description: "Keep array entries matching a condition",
+    defaultConfig: { arrayPath: "", field: "", operator: "equals", value: "" },
+  },
+  {
+    type: "action.setFields",
+    label: "Set Fields",
+    description: "Build an object from templates",
+    defaultConfig: { mappings: { field1: "{{value}}" } },
+  },
+  {
+    type: "action.aggregate",
+    label: "Aggregate",
+    description: "Count/sum/avg/min/max over an array",
+    defaultConfig: { arrayPath: "", field: "", operation: "count" },
+  },
+  {
+    type: "action.getItems",
+    label: "Get Scraped Items",
+    description: "Load stored items of a project",
+    defaultConfig: { scrapingProjectId: "", limit: 50 },
   },
   {
     type: "action.code",

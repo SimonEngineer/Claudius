@@ -14,6 +14,17 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  const passwordStrength = (() => {
+    if (!password) return null;
+    let score = 0;
+    if (password.length >= 8) score++;
+    if (password.length >= 12) score++;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+    if (/\d/.test(password)) score++;
+    if (/[^a-zA-Z0-9]/.test(password)) score++;
+    return score <= 2 ? "weak" : score <= 3 ? "ok" : "strong";
+  })();
+
   const submit = async () => {
     setError(null);
     setBusy(true);
@@ -59,6 +70,17 @@ export default function Login() {
               {showPassword ? "Hide" : "Show"}
             </button>
           </div>
+          {mode === "register" && passwordStrength && (
+            <p
+              style={{
+                fontSize: 12,
+                margin: "4px 0 0",
+                color: passwordStrength === "weak" ? "var(--danger)" : passwordStrength === "ok" ? "var(--warn)" : "var(--success)",
+              }}
+            >
+              Password strength: {passwordStrength}
+            </p>
+          )}
         </div>
 
         {error && <p style={{ color: "var(--danger)" }}>{error}</p>}

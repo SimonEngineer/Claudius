@@ -47,7 +47,8 @@ public class ConditionNode : INodeHandler
         return Task.FromResult(NodeExecutionResult.Ok(context.Input, matched ? "true" : "false"));
     }
 
-    private static bool Evaluate(string op, JsonNode? actual, string? actualString, string? compareValue)
+    // Internal so Filter Items can apply the exact same operator semantics per array entry.
+    internal static bool Evaluate(string op, JsonNode? actual, string? actualString, string? compareValue)
     {
         switch (op)
         {

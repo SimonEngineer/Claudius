@@ -31,6 +31,7 @@ public class SensitiveConfigProtector : ISensitiveConfigProtector
     {
         ["action.sendDiscord"] = new[] { "webhookUrl" },
         ["action.sendSlack"] = new[] { "webhookUrl" },
+        ["action.sendTelegram"] = new[] { "botToken" },
         ["trigger.http"] = new[] { "secret" },
         ["scrapingProject.proxy"] = new[] { "password" },
     };

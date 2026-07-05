@@ -28,13 +28,23 @@ public class ScraperEngine
     {
         var fetcher = _fetcherFactory.GetFetcher(project.RenderMode);
         var customHeaders = CustomHeadersParser.Parse(project.CustomHeadersJson);
+        if (!string.IsNullOrWhiteSpace(project.UserAgent))
+        {
+            // Both fetchers honor a User-Agent custom header (Playwright maps it onto the browser
+            // context), so the override rides the existing per-request header channel.
+            customHeaders["User-Agent"] = project.UserAgent.Trim();
+        }
+
         var proxy = ResolveProxy(project.ProxyConfigJson);
         var items = new List<ExtractedItem>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var robotsByHost = new Dictionary<string, RobotsRules>(StringComparer.OrdinalIgnoreCase);
         var pagesCrawled = 0;
 
-        foreach (var seedUrl in ResolveSeedUrls(project))
+        var seeds = ResolveSeedUrls(project);
+        await AppendSitemapSeedsAsync(project, seeds, customHeaders, proxy, cancellationToken);
+
+        foreach (var seedUrl in seeds)
         {
             var currentUrl = seedUrl;
 
@@ -60,6 +70,12 @@ public class ScraperEngine
                         _logger.LogInformation("Skipping {Url}: disallowed by robots.txt", currentUrl);
                         break;
                     }
+                }
+
+                if (project.CrawlDelayMs > 0 && pagesCrawled > 0)
+                {
+                    // Politeness pause between successive fetches, on top of any rate limit policy.
+                    await Task.Delay(project.CrawlDelayMs, cancellationToken);
                 }
 
                 await _rateLimitGate.WaitForSlotAsync(project.RateLimitPolicy, project.Id, targetUri, cancellationToken);
@@ -136,6 +152,85 @@ public class ScraperEngine
         return seeds;
     }
 
+    /// <summary>Loads the project's sitemap (and one level of child sitemaps) and appends its URLs
+    /// as extra seeds, capped at MaxPages total appended so a huge sitemap can't explode a run.
+    /// Sitemap fetch failures just leave the explicit seeds in place.</summary>
+    private async Task AppendSitemapSeedsAsync(
+        ScrapingProject project,
+        List<string> seeds,
+        IReadOnlyDictionary<string, string> customHeaders,
+        ProxyConfig? proxy,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(project.SitemapUrl) || !Uri.TryCreate(project.SitemapUrl, UriKind.Absolute, out _))
+        {
+            return;
+        }
+
+        var cap = Math.Max(1, project.MaxPages);
+        var seen = new HashSet<string>(seeds, StringComparer.OrdinalIgnoreCase);
+        var httpFetcher = _fetcherFactory.GetFetcher(RenderMode.Http);
+        var added = 0;
+
+        async Task<SitemapParser.SitemapResult?> FetchAsync(string url)
+        {
+            try
+            {
+                var fetched = await httpFetcher.FetchAsync(url, customHeaders, proxy, cancellationToken);
+                return fetched.StatusCode is >= 200 and < 300 ? SitemapParser.Parse(fetched.Html) : null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Could not fetch sitemap {Url}: {Error}", url, ex.Message);
+                return null;
+            }
+        }
+
+        var root = await FetchAsync(project.SitemapUrl.Trim());
+        if (root is null)
+        {
+            return;
+        }
+
+        void Append(IEnumerable<string> urls)
+        {
+            foreach (var url in urls)
+            {
+                if (added >= cap)
+                {
+                    return;
+                }
+
+                if (seen.Add(url))
+                {
+                    seeds.Add(url);
+                    added++;
+                }
+            }
+        }
+
+        Append(root.PageUrls);
+        foreach (var childUrl in root.ChildSitemapUrls)
+        {
+            if (added >= cap)
+            {
+                break;
+            }
+
+            var child = await FetchAsync(childUrl);
+            if (child is not null)
+            {
+                Append(child.PageUrls);
+            }
+        }
+
+        _logger.LogInformation("Sitemap contributed {Count} seed URL(s) for project {ProjectId}", added, project.Id);
+    }
+
     /// <summary>Fetches and caches robots.txt per host (per run). Any failure to fetch or a non-2xx
     /// response is treated as "no restrictions" -- same as most crawlers treat a missing file.</summary>
     private async Task<RobotsRules> GetRobotsRulesAsync(
@@ -156,8 +251,11 @@ public class ScraperEngine
         try
         {
             var fetched = await fetcher.FetchAsync($"{hostKey}/robots.txt", customHeaders, proxy, cancellationToken);
+            var userAgentToken = customHeaders.TryGetValue("User-Agent", out var ua) && !string.IsNullOrWhiteSpace(ua)
+                ? ua
+                : "WeaverScraper";
             rules = fetched.StatusCode is >= 200 and < 300
-                ? RobotsTxtParser.Parse(fetched.Html, "WeaverScraper")
+                ? RobotsTxtParser.Parse(fetched.Html, userAgentToken)
                 : RobotsRules.AllowAll;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

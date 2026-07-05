@@ -74,6 +74,11 @@ export default function WorkflowsList() {
       WorkflowsApi.runFromNode(workflowId, nodeId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
   });
+
+  const toggleMutation = useMutation({
+    mutationFn: WorkflowsApi.toggleEnabled,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
+  });
   const manualTriggerOf = (w: { nodes: { id: string; type: string }[] }) =>
     w.nodes.find((n) => n.type === "trigger.manual");
   const [importError, setImportError] = useState<string | null>(null);
@@ -165,7 +170,12 @@ export default function WorkflowsList() {
                   </td>
                   <td className="muted">{w.nodes.length}</td>
                   <td>
-                    <span className={`pill ${w.isEnabled ? "Succeeded" : "Cancelled"}`}>
+                    <span
+                      className={`pill ${w.isEnabled ? "Succeeded" : "Cancelled"}`}
+                      style={{ cursor: "pointer" }}
+                      title="Click to toggle"
+                      onClick={() => toggleMutation.mutate(w.id)}
+                    >
                       {w.isEnabled ? "enabled" : "disabled"}
                     </span>
                   </td>

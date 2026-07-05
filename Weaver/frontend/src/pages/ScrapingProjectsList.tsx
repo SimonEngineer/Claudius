@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ScrapingProjectsApi } from "../api/endpoints";
 import StatusPill from "../components/StatusPill";
 import { onRunStatusChanged } from "../realtime/runStatusConnection";
 import { timeAgo } from "../utils/timeAgo";
+import { useEscapeKey } from "../utils/useEscapeKey";
 import { usePageTitle } from "../utils/usePageTitle";
 
 export default function ScrapingProjectsList() {
@@ -78,6 +79,39 @@ export default function ScrapingProjectsList() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-projects"] }),
   });
 
+  const toggleMutation = useMutation({
+    mutationFn: ScrapingProjectsApi.toggleEnabled,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scraping-projects"] }),
+  });
+
+  const [importError, setImportError] = useState<string | null>(null);
+  const importMutation = useMutation({
+    mutationFn: (fileContents: string) => ScrapingProjectsApi.importProject(fileContents),
+    onSuccess: () => {
+      setImportError(null);
+      queryClient.invalidateQueries({ queryKey: ["scraping-projects"] });
+    },
+    onError: () => setImportError("Import failed. Make sure the file is a Weaver project export."),
+  });
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const onImportFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    importMutation.mutate(await file.text());
+  };
+
+  const [showTemplates, setShowTemplates] = useState(false);
+  useEscapeKey(useCallback(() => setShowTemplates(false), []));
+  const templates = useQuery({ queryKey: ["project-templates"], queryFn: ScrapingProjectsApi.templates, enabled: showTemplates });
+  const fromTemplateMutation = useMutation({
+    mutationFn: ScrapingProjectsApi.createFromTemplate,
+    onSuccess: () => {
+      setShowTemplates(false);
+      queryClient.invalidateQueries({ queryKey: ["scraping-projects"] });
+    },
+  });
+
   return (
     <div>
       <div className="page-header">
@@ -94,11 +128,44 @@ export default function ScrapingProjectsList() {
               Delete selected ({selectedIds.size})
             </button>
           )}
+          <input ref={importInputRef} type="file" accept=".json" onChange={onImportFileChosen} style={{ display: "none" }} />
+          <button onClick={() => importInputRef.current?.click()}>Import…</button>
+          <button onClick={() => setShowTemplates(true)}>From template…</button>
           <Link to="/scraping-projects/new">
             <button className="primary">+ New Project</button>
           </Link>
         </div>
       </div>
+
+      {importError && <p style={{ color: "var(--danger)" }}>{importError}</p>}
+
+      {showTemplates && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+          onClick={() => setShowTemplates(false)}
+        >
+          <div className="card" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="page-header">
+              <h3 style={{ margin: 0, fontSize: 14 }}>Start from a template</h3>
+              <button className="close-btn" onClick={() => setShowTemplates(false)}>×</button>
+            </div>
+            {templates.data?.map((t) => (
+              <div key={t.key} className="card" style={{ background: "var(--panel-2)", margin: "0 0 8px" }}>
+                <div className="page-header" style={{ marginBottom: 4 }}>
+                  <strong style={{ fontSize: 13 }}>{t.name}</strong>
+                  <button disabled={fromTemplateMutation.isPending} onClick={() => fromTemplateMutation.mutate(t.key)}>
+                    Create
+                  </button>
+                </div>
+                <p className="muted" style={{ margin: 0, fontSize: 12 }}>{t.description}</p>
+              </div>
+            )) ?? <p className="muted">Loading…</p>}
+            <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+              Templates are created disabled so nothing runs until you've looked them over.
+            </p>
+          </div>
+        </div>
+      )}
 
       {projects.data && projects.data.length > 0 && (
         <input
@@ -147,7 +214,12 @@ export default function ScrapingProjectsList() {
                     {p.startUrl}
                   </td>
                   <td>
-                    <span className={`pill ${p.isEnabled ? "Succeeded" : "Cancelled"}`}>
+                    <span
+                      className={`pill ${p.isEnabled ? "Succeeded" : "Cancelled"}`}
+                      style={{ cursor: "pointer" }}
+                      title="Click to toggle"
+                      onClick={() => toggleMutation.mutate(p.id)}
+                    >
                       {p.isEnabled ? "enabled" : "disabled"}
                     </span>
                   </td>
@@ -168,6 +240,7 @@ export default function ScrapingProjectsList() {
                     <button disabled={duplicateMutation.isPending} onClick={() => duplicateMutation.mutate(p.id)}>
                       Duplicate
                     </button>
+                    <button onClick={() => ScrapingProjectsApi.exportProject(p.id, p.name)}>Export</button>
                     <button
                       className="danger"
                       onClick={() => {

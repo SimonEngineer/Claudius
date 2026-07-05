@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import ScrapingProjectsList from "./pages/ScrapingProjectsList";
@@ -10,9 +12,33 @@ import Account from "./pages/Account";
 import Login from "./pages/Login";
 import GlobalSearch from "./components/GlobalSearch";
 import { useAuth } from "./auth/AuthContext";
+import { DashboardApi, MetaApi } from "./api/endpoints";
+import { onRunStatusChanged } from "./realtime/runStatusConnection";
+import { applyTheme, getTheme, type Theme } from "./utils/theme";
+
+declare const __APP_VERSION__: string | undefined;
 
 function AppShell() {
   const { user, logout } = useAuth();
+  const queryClient = useQueryClient();
+  const [theme, setTheme] = useState<Theme>(getTheme());
+
+  const stats = useQuery({ queryKey: ["dashboard-stats"], queryFn: DashboardApi.stats, refetchInterval: 30000 });
+  const version = useQuery({ queryKey: ["api-version"], queryFn: MetaApi.version, staleTime: Infinity });
+
+  useEffect(() => {
+    return onRunStatusChanged(() => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    });
+  }, [queryClient]);
+
+  const running = (stats.data?.runningScrapes ?? 0) + (stats.data?.runningWorkflows ?? 0);
+
+  const toggleTheme = () => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    applyTheme(next);
+  };
 
   return (
     <>
@@ -24,6 +50,15 @@ function AppShell() {
         <nav>
           <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
             Dashboard
+            {running > 0 && (
+              <span
+                className="pill Running"
+                style={{ marginLeft: 8, fontSize: 11 }}
+                title={`${stats.data?.runningScrapes ?? 0} scrape(s), ${stats.data?.runningWorkflows ?? 0} workflow run(s) in flight`}
+              >
+                {running} running
+              </span>
+            )}
           </NavLink>
           <NavLink to="/scraping-projects" className={({ isActive }) => (isActive ? "active" : "")}>
             Scraping Projects
@@ -39,11 +74,18 @@ function AppShell() {
           </NavLink>
         </nav>
         <div style={{ marginTop: "auto", paddingTop: 16 }}>
+          <div className="navlink" onClick={toggleTheme} title="Toggle light/dark theme">
+            {theme === "dark" ? "☾ Dark theme" : "☀ Light theme"}
+          </div>
           <NavLink to="/account" className={({ isActive }) => `navlink${isActive ? " active" : ""}`}>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{user?.email}</span>
           </NavLink>
           <div className="navlink" onClick={logout}>
             Log out
+          </div>
+          <div className="muted" style={{ fontSize: 11, padding: "8px 10px 0" }}>
+            api v{version.data?.version ?? "?"}
+            {typeof __APP_VERSION__ === "string" ? ` · ui v${__APP_VERSION__}` : ""}
           </div>
         </div>
       </aside>

@@ -72,6 +72,10 @@ public class WorkflowRun
     public TriggerKind TriggerKind { get; set; }
     public string? TriggerNodeType { get; set; }
 
+    /// <summary>Which trigger node started this run -- lets a finished run be replayed with the
+    /// same payload even if the workflow has several triggers.</summary>
+    public Guid? TriggerNodeId { get; set; }
+
     /// <summary>JSON payload the trigger produced (cron tick, HTTP body, event payload, ...).</summary>
     public string TriggerPayloadJson { get; set; } = "{}";
 

@@ -23,6 +23,8 @@ public static class SelectorExtractor
                 value = resolved.ToString();
             }
 
+            value = FieldTransforms.Apply(value, FieldTransforms.Parse(field.TransformsJson));
+
             if (field.Required && string.IsNullOrWhiteSpace(value))
             {
                 throw new FieldExtractionException(field.Name, field.Selector);

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ScrapingProjectsApi } from "../api/endpoints";
 import { apiBaseUrl } from "../api/client";
 import CronPreviewHint from "./CronPreviewHint";
+import { catalogEntry } from "./nodeCatalog";
 
 interface Props {
   workflowId?: string;
@@ -66,15 +67,22 @@ export default function NodeConfigPanel({
 }: Props) {
   const setConfig = (patch: Record<string, unknown>) => onChange({ config: { ...config, ...patch } });
   const scrapingProjects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list, enabled: nodeType === "action.scrape" });
+  const getItemsProjects = useQuery({ queryKey: ["scraping-projects"], queryFn: ScrapingProjectsApi.list, enabled: nodeType === "action.getItems" });
   const isTrigger = nodeType.startsWith("trigger.");
   const [copied, setCopied] = useState(false);
+  const [curlCopied, setCurlCopied] = useState(false);
 
   return (
     <div className="card" style={{ position: "sticky", top: 0 }}>
       <div className="page-header">
-        <h3 style={{ margin: 0, fontSize: 14 }}>{nodeType}</h3>
+        <h3 style={{ margin: 0, fontSize: 14 }}>{catalogEntry(nodeType)?.label ?? nodeType}</h3>
         <button className="close-btn" onClick={onClose}>×</button>
       </div>
+      {catalogEntry(nodeType) && (
+        <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+          <span className="mono">{nodeType}</span> — {catalogEntry(nodeType)!.description}
+        </p>
+      )}
 
       <TextField label="Node name" value={name} onChange={(v) => onChange({ name: v })} />
 
@@ -100,7 +108,32 @@ export default function NodeConfigPanel({
 
       {nodeType === "trigger.http" && (
         <>
-          <TextField label="Secret (optional)" value={(config.secret as string) ?? ""} onChange={(v) => setConfig({ secret: v })} />
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <TextField label="Secret (optional)" value={(config.secret as string) ?? ""} onChange={(v) => setConfig({ secret: v })} />
+            </div>
+            <button
+              style={{ marginBottom: 12 }}
+              title="Fill with a cryptographically random secret"
+              onClick={() => {
+                const bytes = new Uint8Array(24);
+                crypto.getRandomValues(bytes);
+                setConfig({ secret: Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("") });
+              }}
+            >
+              Generate
+            </button>
+          </div>
+          <div className="field">
+            <label>Response mode</label>
+            <select
+              value={(config.responseMode as string) ?? "async"}
+              onChange={(e) => setConfig({ responseMode: e.target.value })}
+            >
+              <option value="async">Async — reply immediately with the run id</option>
+              <option value="lastNode">Sync — wait and return the last node's output</option>
+            </select>
+          </div>
           <div className="field">
             <label>
               <input
@@ -139,9 +172,45 @@ export default function NodeConfigPanel({
                 >
                   {copied ? "Copied!" : "Copy"}
                 </button>
+                <button
+                  title="Copy a ready-to-run curl command"
+                  onClick={() => {
+                    const url = `${apiBaseUrl}/api/webhooks/${workflowId}/${nodeId}`;
+                    const secret = (config.secret as string) ?? "";
+                    const secretHeader = secret && !(config.hmacSignature as boolean) ? ` \\\n  -H 'X-Weaver-Secret: ${secret}'` : "";
+                    navigator.clipboard.writeText(
+                      `curl -X POST '${url}' \\\n  -H 'Content-Type: application/json'${secretHeader} \\\n  -d '{"hello": "weaver"}'`,
+                    );
+                    setCurlCopied(true);
+                    setTimeout(() => setCurlCopied(false), 1500);
+                  }}
+                >
+                  {curlCopied ? "Copied!" : "curl"}
+                </button>
               </div>
             </div>
           )}
+        </>
+      )}
+
+      {nodeType === "trigger.feed" && (
+        <>
+          <TextField
+            label="Feed URL (RSS 2.0 or Atom)"
+            mono
+            value={(config.feedUrl as string) ?? ""}
+            onChange={(v) => setConfig({ feedUrl: v })}
+            placeholder="https://example.com/feed.xml"
+          />
+          <TextField
+            label="Poll interval (minutes)"
+            value={String((config.intervalMinutes as number) ?? 5)}
+            onChange={(v) => setConfig({ intervalMinutes: Number(v) || 5 })}
+          />
+          <p className="muted" style={{ fontSize: 12 }}>
+            Fires one run per NEW entry (the payload carries id/title/link/summary). The first poll
+            only records existing entries so history doesn't flood the workflow.
+          </p>
         </>
       )}
 
@@ -260,6 +329,160 @@ export default function NodeConfigPanel({
             value={(config.message as string) ?? ""}
             onChange={(v) => setConfig({ message: v })}
             hint="Use {{dot.path}} for the upstream node's output, or {{Node Name.path}} to reach back to any earlier node."
+          />
+        </>
+      )}
+
+      {nodeType === "action.sendTelegram" && (
+        <>
+          <TextField
+            label="Bot token (or {{secrets.NAME}})"
+            mono
+            value={(config.botToken as string) ?? ""}
+            onChange={(v) => setConfig({ botToken: v })}
+          />
+          <TextField
+            label="Chat id"
+            mono
+            value={(config.chatId as string) ?? ""}
+            onChange={(v) => setConfig({ chatId: v })}
+            placeholder="-1001234567890"
+          />
+          <TextAreaField
+            label="Message"
+            value={(config.message as string) ?? ""}
+            onChange={(v) => setConfig({ message: v })}
+            hint="Use {{dot.path}} for the upstream node's output, or {{Node Name.path}} to reach back to any earlier node."
+          />
+        </>
+      )}
+
+      {nodeType === "action.filterItems" && (
+        <>
+          <TextField
+            label="Array path (blank = whole input)"
+            mono
+            value={(config.arrayPath as string) ?? ""}
+            onChange={(v) => setConfig({ arrayPath: v })}
+          />
+          <TextField
+            label="Field (dot path within each entry)"
+            mono
+            value={(config.field as string) ?? ""}
+            onChange={(v) => setConfig({ field: v })}
+          />
+          <div className="field">
+            <label>Operator</label>
+            <select value={(config.operator as string) ?? "equals"} onChange={(e) => setConfig({ operator: e.target.value })}>
+              <option value="equals">equals</option>
+              <option value="notEquals">not equals</option>
+              <option value="contains">contains</option>
+              <option value="matchesRegex">matches regex</option>
+              <option value="greaterThan">greater than</option>
+              <option value="lessThan">less than</option>
+              <option value="greaterThanOrEqual">greater or equal</option>
+              <option value="lessThanOrEqual">less or equal</option>
+              <option value="exists">exists</option>
+              <option value="notExists">does not exist</option>
+            </select>
+          </div>
+          <TextField label="Value" mono value={(config.value as string) ?? ""} onChange={(v) => setConfig({ value: v })} />
+        </>
+      )}
+
+      {nodeType === "action.setFields" && (
+        <>
+          {Object.entries((config.mappings as Record<string, string>) ?? {}).map(([key, template], mi) => (
+            <div key={mi} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+              <input
+                placeholder="field name"
+                value={key}
+                onChange={(e) => {
+                  const entries = Object.entries((config.mappings as Record<string, string>) ?? {});
+                  entries[mi] = [e.target.value, template];
+                  setConfig({ mappings: Object.fromEntries(entries) });
+                }}
+              />
+              <input
+                className="mono"
+                placeholder="{{current.title}}"
+                value={template}
+                onChange={(e) => {
+                  const entries = Object.entries((config.mappings as Record<string, string>) ?? {});
+                  entries[mi] = [key, e.target.value];
+                  setConfig({ mappings: Object.fromEntries(entries) });
+                }}
+              />
+              <button
+                className="danger"
+                onClick={() => {
+                  const mappings = { ...((config.mappings as Record<string, string>) ?? {}) };
+                  delete mappings[key];
+                  setConfig({ mappings });
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => setConfig({ mappings: { ...((config.mappings as Record<string, string>) ?? {}), [`field${Object.keys((config.mappings as Record<string, string>) ?? {}).length + 1}`]: "" } })}
+          >
+            + Add mapping
+          </button>
+          <p className="muted" style={{ fontSize: 12 }}>
+            Outputs a fresh object; each value is a template over the input (and earlier node outputs).
+          </p>
+        </>
+      )}
+
+      {nodeType === "action.aggregate" && (
+        <>
+          <TextField
+            label="Array path (blank = whole input)"
+            mono
+            value={(config.arrayPath as string) ?? ""}
+            onChange={(v) => setConfig({ arrayPath: v })}
+          />
+          <TextField
+            label="Numeric field (dot path within each entry)"
+            mono
+            value={(config.field as string) ?? ""}
+            onChange={(v) => setConfig({ field: v })}
+          />
+          <div className="field">
+            <label>Operation</label>
+            <select value={(config.operation as string) ?? "count"} onChange={(e) => setConfig({ operation: e.target.value })}>
+              <option value="count">count</option>
+              <option value="sum">sum</option>
+              <option value="avg">avg</option>
+              <option value="min">min</option>
+              <option value="max">max</option>
+            </select>
+          </div>
+        </>
+      )}
+
+      {nodeType === "action.getItems" && (
+        <>
+          <div className="field">
+            <label>Scraping project</label>
+            <select
+              value={(config.scrapingProjectId as string) ?? ""}
+              onChange={(e) => setConfig({ scrapingProjectId: e.target.value })}
+            >
+              <option value="">Select a project…</option>
+              {getItemsProjects.data?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <TextField
+            label="Limit (newest N items, max 500)"
+            value={String((config.limit as number) ?? 50)}
+            onChange={(v) => setConfig({ limit: Number(v) || 50 })}
           />
         </>
       )}

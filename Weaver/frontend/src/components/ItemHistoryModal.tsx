@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ScrapingProjectsApi } from "../api/endpoints";
+import { useEscapeKey } from "../utils/useEscapeKey";
 
 export default function ItemHistoryModal({
   scrapingProjectId,
@@ -10,6 +11,7 @@ export default function ItemHistoryModal({
   itemKey: string;
   onClose: () => void;
 }) {
+  useEscapeKey(onClose);
   const history = useQuery({
     queryKey: ["item-history", scrapingProjectId, itemKey],
     queryFn: () => ScrapingProjectsApi.itemHistory(scrapingProjectId, itemKey),

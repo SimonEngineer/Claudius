@@ -100,7 +100,45 @@ public class WebhooksController : ControllerBase
         }
 
         var runId = await _engine.StartRunFromNodeAsync(workflowId, nodeId, TriggerKind.Http, body, ct);
-        return Accepted(new { runId });
+
+        // responseMode "lastNode" turns the webhook synchronous: the engine has already executed
+        // the whole run inline by this point, so we can hand the caller the terminal output --
+        // the pattern for "call this workflow like an API".
+        var responseMode = config?["responseMode"]?.GetValue<string>() ?? "async";
+        if (!string.Equals(responseMode, "lastNode", StringComparison.OrdinalIgnoreCase))
+        {
+            return Accepted(new { runId });
+        }
+
+        var run = await _db.WorkflowRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        var lastNodeRun = await _db.NodeRuns.AsNoTracking()
+            .Where(n => n.WorkflowRunId == runId && n.CompletedAt != null)
+            .OrderByDescending(n => n.CompletedAt)
+            .FirstOrDefaultAsync(ct);
+
+        JsonNode? output = null;
+        if (lastNodeRun?.OutputJson is { } outputJson && !string.IsNullOrWhiteSpace(outputJson))
+        {
+            try
+            {
+                output = JsonNode.Parse(outputJson);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Leave output null; status still tells the caller what happened.
+            }
+        }
+
+        var status = run?.Status.ToString() ?? "Unknown";
+        var payload = new JsonObject
+        {
+            ["runId"] = runId,
+            ["status"] = status,
+            ["error"] = run?.ErrorMessage,
+            ["output"] = output,
+        };
+
+        return run?.Status == RunStatus.Succeeded ? Ok(payload) : StatusCode(StatusCodes.Status502BadGateway, payload);
     }
 
     private static bool VerifyHmacSignature(byte[] rawBody, string secret, string? providedHeader)

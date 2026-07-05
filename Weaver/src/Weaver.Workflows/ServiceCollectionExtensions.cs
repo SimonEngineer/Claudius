@@ -15,6 +15,8 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient("slack-webhook");
         services.AddHttpClient("http-request-node");
         services.AddHttpClient("failure-notification");
+        services.AddHttpClient("telegram");
+        services.AddHttpClient("feed-poller");
 
         services.AddScoped<IScriptDbAccess, ScriptDbAccess>();
         services.AddScoped<Weaver.Infrastructure.Realtime.IFailureNotifier, FailureNotifier>();
@@ -36,6 +38,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INodeHandler, HttpRequestNode>();
         services.AddSingleton<INodeHandler, DelayNode>();
         services.AddSingleton<INodeHandler, SplitIntoBatchesNode>();
+        services.AddSingleton<INodeHandler, SendTelegramNode>();
+        services.AddSingleton<INodeHandler, FeedTriggerNode>();
+        services.AddSingleton<INodeHandler, FilterItemsNode>();
+        services.AddSingleton<INodeHandler, SetFieldsNode>();
+        services.AddSingleton<INodeHandler, AggregateNode>();
+        services.AddSingleton<INodeHandler, GetItemsNode>();
 
         return services;
     }

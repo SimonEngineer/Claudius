@@ -8,14 +8,33 @@ import { usePageTitle } from "../utils/usePageTitle";
 export default function Activity() {
   usePageTitle("Activity");
   const [page, setPage] = useState(1);
+  const [typeFilter, setTypeFilter] = useState("");
   const pageSize = 50;
-  const log = useQuery({ queryKey: ["audit-log", page], queryFn: () => AuditLogApi.list(page, pageSize) });
+  const log = useQuery({
+    queryKey: ["audit-log", page, typeFilter],
+    queryFn: () => AuditLogApi.list(page, pageSize, typeFilter || undefined),
+  });
 
   return (
     <div>
       <div className="page-header">
         <h2>Activity</h2>
-        <button onClick={() => AuditLogApi.exportCsv()}>Export CSV</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <select
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All types</option>
+            <option value="ScrapingProject">Scraping projects</option>
+            <option value="Workflow">Workflows</option>
+            <option value="RateLimitPolicy">Rate limit policies</option>
+            <option value="Credential">Credentials</option>
+          </select>
+          <button onClick={() => AuditLogApi.exportCsv()}>Export CSV</button>
+        </div>
       </div>
 
       <div className="card">

@@ -34,3 +34,12 @@ public class ManualTriggerNode : INodeHandler
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context) =>
         Task.FromResult(NodeExecutionResult.Ok(context.Input));
 }
+
+/// <summary>Fires per new feed entry; the FeedTriggerSchedulerService in the Worker does the
+/// polling -- at run time this is a passthrough like every other trigger.</summary>
+public class FeedTriggerNode : INodeHandler
+{
+    public string Type => "trigger.feed";
+    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context) =>
+        Task.FromResult(NodeExecutionResult.Ok(context.Input));
+}

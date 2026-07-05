@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { ApiKeysApi, AuthApi, CredentialsApi, NotificationSettingsApi } from "../api/endpoints";
+import { ApiKeysApi, AuthApi, CredentialsApi, MetaApi, NotificationSettingsApi } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
 import type { CreatedApiKey, NotificationSettings } from "../types";
 import { usePageTitle } from "../utils/usePageTitle";
@@ -16,6 +16,7 @@ export default function Account() {
   const [busy, setBusy] = useState(false);
 
   const queryClient = useQueryClient();
+  const overview = useQuery({ queryKey: ["account-overview"], queryFn: MetaApi.accountOverview });
   const apiKeys = useQuery({ queryKey: ["api-keys"], queryFn: ApiKeysApi.list });
   const [newKeyName, setNewKeyName] = useState("");
   const [justCreated, setJustCreated] = useState<CreatedApiKey | null>(null);
@@ -114,6 +115,12 @@ export default function Account() {
 
       <div className="card" style={{ maxWidth: 400 }}>
         <p className="muted">Signed in as {user?.email}</p>
+        {overview.data && (
+          <p className="muted" style={{ fontSize: 12 }}>
+            Member since {new Date(overview.data.createdAt).toLocaleDateString()} · {overview.data.projects} project(s),{" "}
+            {overview.data.workflows} workflow(s), {overview.data.credentials} credential(s), {overview.data.apiKeys} API key(s)
+          </p>
+        )}
 
         <h3 style={{ fontSize: 14 }}>Change password</h3>
         <div className="field">

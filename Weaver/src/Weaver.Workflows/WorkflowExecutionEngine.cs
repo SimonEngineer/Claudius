@@ -79,6 +79,7 @@ public class WorkflowExecutionEngine : IWorkflowExecutionEngine
             Status = RunStatus.Running,
             TriggerKind = triggerKind,
             TriggerNodeType = triggerNode.Type,
+            TriggerNodeId = triggerNode.Id,
             TriggerPayloadJson = payload?.ToJsonString() ?? "null",
             StartedAt = DateTimeOffset.UtcNow,
         };

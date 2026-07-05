@@ -111,6 +111,9 @@ public class ScrapingProjectsController : ControllerBase
             ScheduleCron = string.IsNullOrWhiteSpace(request.ScheduleCron) ? null : request.ScheduleCron.Trim(),
             StartUrlsJson = JsonSerializer.Serialize(request.StartUrls ?? new List<string>()),
             RespectRobotsTxt = request.RespectRobotsTxt,
+            SitemapUrl = string.IsNullOrWhiteSpace(request.SitemapUrl) ? null : request.SitemapUrl.Trim(),
+            CrawlDelayMs = Math.Clamp(request.CrawlDelayMs, 0, 60_000),
+            UserAgent = string.IsNullOrWhiteSpace(request.UserAgent) ? null : request.UserAgent.Trim(),
             DataRetentionDays = request.DataRetentionDays,
             RateLimitPolicyId = request.RateLimitPolicyId,
             IsEnabled = request.IsEnabled,
@@ -157,6 +160,9 @@ public class ScrapingProjectsController : ControllerBase
         project.ScheduleCron = string.IsNullOrWhiteSpace(request.ScheduleCron) ? null : request.ScheduleCron.Trim();
         project.StartUrlsJson = JsonSerializer.Serialize(request.StartUrls ?? new List<string>());
         project.RespectRobotsTxt = request.RespectRobotsTxt;
+        project.SitemapUrl = string.IsNullOrWhiteSpace(request.SitemapUrl) ? null : request.SitemapUrl.Trim();
+        project.CrawlDelayMs = Math.Clamp(request.CrawlDelayMs, 0, 60_000);
+        project.UserAgent = string.IsNullOrWhiteSpace(request.UserAgent) ? null : request.UserAgent.Trim();
         project.DataRetentionDays = request.DataRetentionDays;
         project.RateLimitPolicyId = request.RateLimitPolicyId;
         project.IsEnabled = request.IsEnabled;
@@ -214,6 +220,9 @@ public class ScrapingProjectsController : ControllerBase
             // the original's schedule is the same trap as duplicating an enabled workflow.
             StartUrlsJson = source.StartUrlsJson,
             RespectRobotsTxt = source.RespectRobotsTxt,
+            SitemapUrl = source.SitemapUrl,
+            CrawlDelayMs = source.CrawlDelayMs,
+            UserAgent = source.UserAgent,
             DataRetentionDays = source.DataRetentionDays,
             RateLimitPolicyId = source.RateLimitPolicyId,
             IsEnabled = source.IsEnabled,
@@ -231,6 +240,7 @@ public class ScrapingProjectsController : ControllerBase
                 IsKey = f.IsKey,
                 Required = f.Required,
                 Order = f.Order,
+                TransformsJson = f.TransformsJson,
             });
         }
 
@@ -271,6 +281,153 @@ public class ScrapingProjectsController : ControllerBase
 
         var runs = await _db.ScrapeRuns.Where(r => r.ScrapingProjectId == id).OrderByDescending(r => r.CreatedAt).Take(50).ToListAsync(ct);
         return runs.Select(ScrapeRunDto.FromEntity).ToList();
+    }
+
+    /// <summary>Downloads a portable JSON definition of this project (credentials blanked).</summary>
+    [HttpGet("{id:guid}/export")]
+    public async Task<IActionResult> Export(Guid id, CancellationToken ct)
+    {
+        var project = await _db.ScrapingProjects.Include(p => p.Fields).FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        var export = ScrapingProjectExportDto.FromDto(ScrapingProjectDto.FromEntity(project, _protector));
+        var json = JsonSerializer.Serialize(export, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        var fileNameStem = string.Join("-", project.Name.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", $"{fileNameStem}.weaver-project.json");
+    }
+
+    /// <summary>Creates a new (disabled) project from a previously-exported file or a template definition.</summary>
+    [HttpPost("import")]
+    public async Task<ActionResult<ScrapingProjectDto>> Import([FromBody] ScrapingProjectExportDto import, CancellationToken ct)
+    {
+        if (import.WeaverProjectExportVersion != ScrapingProjectExportDto.CurrentVersion)
+        {
+            return BadRequest($"Unsupported export version {import.WeaverProjectExportVersion} (this server understands {ScrapingProjectExportDto.CurrentVersion}).");
+        }
+
+        if (string.IsNullOrWhiteSpace(import.Name) || string.IsNullOrWhiteSpace(import.StartUrl))
+        {
+            return BadRequest("The file is missing a project name or start URL.");
+        }
+
+        var project = new ScrapingProject
+        {
+            OwnerUserId = UserId,
+            Name = import.Name,
+            Description = import.Description,
+            StartUrl = import.StartUrl,
+            Mode = import.Mode,
+            RenderMode = import.RenderMode,
+            ItemSelector = import.ItemSelector,
+            PaginationStrategy = import.PaginationStrategy,
+            NextPageSelector = import.NextPageSelector,
+            PageUrlTemplate = import.PageUrlTemplate,
+            MaxPages = import.MaxPages,
+            CustomHeadersJson = JsonSerializer.Serialize(import.CustomHeaders ?? new Dictionary<string, string>()),
+            ProxyConfigJson = (import.Proxy ?? ProxyConfigDto.Disabled).ToEncryptedJson(_protector),
+            StartUrlsJson = JsonSerializer.Serialize(import.StartUrls ?? new List<string>()),
+            RespectRobotsTxt = import.RespectRobotsTxt,
+            SitemapUrl = import.SitemapUrl,
+            CrawlDelayMs = Math.Clamp(import.CrawlDelayMs, 0, 60_000),
+            UserAgent = import.UserAgent,
+            DataRetentionDays = import.DataRetentionDays,
+            IsEnabled = false, // Same safety rule as workflow import: nothing starts running on its own.
+        };
+        ApplyFields(project, import.Fields ?? new List<FieldSelectorDto>());
+
+        _db.ScrapingProjects.Add(project);
+        _auditLogger.Record(UserId, AuditAction.Created, "ScrapingProject", project.Id, project.Name);
+        await _db.SaveChangesAsync(ct);
+        return CreatedAtAction(nameof(Get), new { id = project.Id }, ScrapingProjectDto.FromEntity(project, _protector));
+    }
+
+    /// <summary>Predefined example projects (public scraping sandboxes) to start from.</summary>
+    [HttpGet("templates")]
+    public ActionResult<List<object>> Templates() =>
+        ProjectTemplates.All.Select(t => (object)new { t.Key, t.Definition.Name, t.Definition.Description }).ToList();
+
+    [HttpPost("templates/{key}")]
+    public Task<ActionResult<ScrapingProjectDto>> CreateFromTemplate(string key, CancellationToken ct)
+    {
+        var template = ProjectTemplates.All.FirstOrDefault(t => t.Key == key);
+        return template is null
+            ? Task.FromResult<ActionResult<ScrapingProjectDto>>(NotFound())
+            : Import(template.Definition, ct);
+    }
+
+    /// <summary>Enables (or rotates) public read-only sharing of this project's items. Returns the
+    /// share URL path once; only the token's hash is stored.</summary>
+    [HttpPost("{id:guid}/share")]
+    public async Task<ActionResult<object>> EnableShare(Guid id, CancellationToken ct)
+    {
+        var project = await _db.ScrapingProjects.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        var token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+        project.ShareTokenHash = PublicController.HashToken(token);
+        _auditLogger.Record(UserId, AuditAction.Updated, "ScrapingProject", project.Id, $"{project.Name} (share link enabled)");
+        await _db.SaveChangesAsync(ct);
+        return new { token, path = $"/api/public/items/{token}" };
+    }
+
+    /// <summary>Disables public sharing (existing links stop working immediately).</summary>
+    [HttpDelete("{id:guid}/share")]
+    public async Task<IActionResult> DisableShare(Guid id, CancellationToken ct)
+    {
+        var project = await _db.ScrapingProjects.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        project.ShareTokenHash = null;
+        _auditLogger.Record(UserId, AuditAction.Updated, "ScrapingProject", project.Id, $"{project.Name} (share link disabled)");
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>Flips IsEnabled without a full update round-trip (the list rows' quick toggle).</summary>
+    [HttpPost("{id:guid}/toggle-enabled")]
+    public async Task<ActionResult<object>> ToggleEnabled(Guid id, CancellationToken ct)
+    {
+        var project = await _db.ScrapingProjects.FirstOrDefaultAsync(p => p.Id == id && p.OwnerUserId == UserId, ct);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        project.IsEnabled = !project.IsEnabled;
+        project.UpdatedAt = DateTimeOffset.UtcNow;
+        _auditLogger.Record(UserId, AuditAction.Updated, "ScrapingProject", project.Id, $"{project.Name} ({(project.IsEnabled ? "enabled" : "disabled")})");
+        await _db.SaveChangesAsync(ct);
+        return new { project.IsEnabled };
+    }
+
+    /// <summary>Run count, item count and approximate stored bytes -- for the editor's storage strip.</summary>
+    [HttpGet("{id:guid}/storage-stats")]
+    public async Task<ActionResult<object>> StorageStats(Guid id, CancellationToken ct)
+    {
+        if (!await _db.ScrapingProjects.AnyAsync(p => p.Id == id && p.OwnerUserId == UserId, ct))
+        {
+            return NotFound();
+        }
+
+        var runCount = await _db.ScrapeRuns.CountAsync(r => r.ScrapingProjectId == id, ct);
+        var itemCount = await _db.ScrapedItems.CountAsync(i => i.ScrapingProjectId == id, ct);
+        var oldestItem = await _db.ScrapedItems.Where(i => i.ScrapingProjectId == id).MinAsync(i => (DateTimeOffset?)i.CreatedAt, ct);
+        var newestItem = await _db.ScrapedItems.Where(i => i.ScrapingProjectId == id).MaxAsync(i => (DateTimeOffset?)i.CreatedAt, ct);
+        // jsonb column size is a good-enough proxy for what this project actually costs to keep.
+        var approxBytes = await _db.Database
+            .SqlQuery<long>($@"SELECT COALESCE(SUM(pg_column_size(""Data"")), 0)::bigint AS ""Value"" FROM scraped_items WHERE ""ScrapingProjectId"" = {id}")
+            .FirstOrDefaultAsync(ct);
+
+        return new { runCount, itemCount, oldestItem, newestItem, approxBytes };
     }
 
     /// <summary>Requests cancellation of a running scrape run (broadcast to whichever Worker owns it).</summary>
@@ -533,6 +690,7 @@ public class ScrapingProjectsController : ControllerBase
                 IsKey = f.IsKey,
                 Required = f.Required,
                 Order = f.Order,
+                TransformsJson = f.TransformsToJson(),
             });
         }
     }

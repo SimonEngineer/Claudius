@@ -18,6 +18,11 @@ export interface ProxyConfig {
 
 export const emptyProxyConfig: ProxyConfig = { enabled: false, protocol: "http", host: "", port: 0, username: "", password: "" };
 
+export interface FieldTransform {
+  kind: "trim" | "lowercase" | "uppercase" | "stripHtml" | "regexExtract" | "parseNumber";
+  pattern?: string | null;
+}
+
 export interface FieldSelector {
   id: string | null;
   name: string;
@@ -28,6 +33,7 @@ export interface FieldSelector {
   isKey: boolean;
   required: boolean;
   order: number;
+  transforms?: FieldTransform[];
 }
 
 export interface ScrapingProject {
@@ -47,6 +53,10 @@ export interface ScrapingProject {
   scheduleCron: string | null;
   startUrls: string[];
   respectRobotsTxt: boolean;
+  sitemapUrl: string | null;
+  crawlDelayMs: number;
+  userAgent: string | null;
+  shareEnabled: boolean;
   dataRetentionDays: number | null;
   rateLimitPolicyId: string | null;
   isEnabled: boolean;
@@ -57,7 +67,7 @@ export interface ScrapingProject {
   lastRunAt: string | null;
 }
 
-export type UpsertScrapingProjectRequest = Omit<ScrapingProject, "id" | "createdAt" | "updatedAt" | "lastRunStatus" | "lastRunAt">;
+export type UpsertScrapingProjectRequest = Omit<ScrapingProject, "id" | "createdAt" | "updatedAt" | "lastRunStatus" | "lastRunAt" | "shareEnabled">;
 
 export interface ScrapeRun {
   id: string;
@@ -114,9 +124,10 @@ export interface RateLimitPolicy {
   permitLimit: number;
   windowSeconds: number;
   burstCapacity: number;
+  usedByProjects: number;
 }
 
-export type UpsertRateLimitPolicyRequest = Omit<RateLimitPolicy, "id">;
+export type UpsertRateLimitPolicyRequest = Omit<RateLimitPolicy, "id" | "usedByProjects">;
 
 export interface ApiKey {
   id: string;
@@ -167,12 +178,62 @@ export interface CronPreview {
   nextOccurrences: string[];
 }
 
+export interface FailedRun {
+  kind: "scrape" | "workflow";
+  resourceId: string;
+  resourceName: string;
+  error: string | null;
+  at: string;
+}
+
 export interface DashboardStats {
   scrapesSucceededToday: number;
   scrapesFailedToday: number;
   workflowRunsSucceededToday: number;
   workflowRunsFailedToday: number;
+  runningScrapes: number;
+  runningWorkflows: number;
   recentActivity: AuditLogEntry[];
+  recentFailures: FailedRun[];
+}
+
+export interface DailyRunCount {
+  day: string;
+  succeeded: number;
+  failed: number;
+}
+
+export interface RunsPerDay {
+  scrapes: DailyRunCount[];
+  workflows: DailyRunCount[];
+}
+
+export interface WorkerInfo {
+  name: string;
+  startedAt: string;
+  lastSeen: string;
+}
+
+export interface StorageStats {
+  runCount: number;
+  itemCount: number;
+  oldestItem: string | null;
+  newestItem: string | null;
+  approxBytes: number;
+}
+
+export interface ProjectTemplate {
+  key: string;
+  name: string;
+  description: string | null;
+}
+
+export interface AccountOverview {
+  createdAt: string;
+  projects: number;
+  workflows: number;
+  credentials: number;
+  apiKeys: number;
 }
 
 export interface WorkflowNode {

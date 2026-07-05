@@ -55,13 +55,21 @@ export default function WeaverFlowNode({ data }: NodeProps<WeaverNodeData>) {
 
       {isCondition ? (
         <>
-          <Handle type="source" position={Position.Right} id="true" style={{ top: "35%", background: "#22c55e" }} />
-          <Handle type="source" position={Position.Right} id="false" style={{ top: "65%", background: "#ef4444" }} />
+          <Handle type="source" position={Position.Right} id="true" style={{ top: "35%", background: "#22c55e" }} title="true branch" />
+          <Handle type="source" position={Position.Right} id="false" style={{ top: "65%", background: "#ef4444" }} title="false branch" />
         </>
       ) : (
         <Handle type="source" position={Position.Right} />
       )}
-      {isAction && <Handle type="source" position={Position.Bottom} id="error" style={{ background: "#ef4444" }} />}
+      {isAction && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="error"
+          style={{ background: "#ef4444" }}
+          title="Error branch: taken instead of the normal output when this node fails"
+        />
+      )}
     </div>
   );
 }

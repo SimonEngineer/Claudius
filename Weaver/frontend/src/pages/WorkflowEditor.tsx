@@ -22,6 +22,7 @@ import WorkflowRunHistory from "../components/WorkflowRunHistory";
 import WorkflowRevisions from "../components/WorkflowRevisions";
 import { nodeTypes, type WeaverNodeData } from "../components/WeaverFlowNode";
 import type { UpsertWorkflowRequest, WorkflowEdge, WorkflowNode as ApiWorkflowNode } from "../types";
+import { useEscapeKey } from "../utils/useEscapeKey";
 import { usePageTitle } from "../utils/usePageTitle";
 
 function toRfNode(n: ApiWorkflowNode, onRun: (nodeId: string) => void): Node<WeaverNodeData> {
@@ -49,6 +50,8 @@ function toRfEdge(e: WorkflowEdge): Edge {
     target: e.targetNodeId,
     targetHandle: e.targetHandle ?? undefined,
     label: e.sourceHandle ?? undefined,
+    // An "error" edge is the failure path -- make it visually unmistakable.
+    ...(e.sourceHandle === "error" ? { style: { stroke: "#ef4444" }, animated: true } : {}),
   };
 }
 
@@ -104,9 +107,18 @@ function WorkflowEditorInner() {
   const savedSnapshotRef = useRef<string>(snapshot("New Workflow", "", true, null, [], []));
 
   const runNodeMutation = useMutation({
-    mutationFn: ({ nodeId }: { nodeId: string }) => WorkflowsApi.runFromNode(workflowIdRef.current!, nodeId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflow-runs", workflowIdRef.current] }),
+    mutationFn: ({ nodeId, payload }: { nodeId: string; payload: unknown }) =>
+      WorkflowsApi.runFromNode(workflowIdRef.current!, nodeId, payload),
+    onSuccess: () => {
+      setRunPayloadFor(null);
+      queryClient.invalidateQueries({ queryKey: ["workflow-runs", workflowIdRef.current] });
+    },
   });
+
+  const [runPayloadFor, setRunPayloadFor] = useState<string | null>(null);
+  const [runPayloadText, setRunPayloadText] = useState("");
+  const [runPayloadError, setRunPayloadError] = useState<string | null>(null);
+  useEscapeKey(useCallback(() => setRunPayloadFor(null), []));
 
   const handleRun = useCallback(
     (nodeId: string) => {
@@ -114,10 +126,26 @@ function WorkflowEditorInner() {
         alert("Save the workflow before running it.");
         return;
       }
-      runNodeMutation.mutate({ nodeId });
+      setRunPayloadText("");
+      setRunPayloadError(null);
+      setRunPayloadFor(nodeId);
     },
-    [runNodeMutation],
+    [],
   );
+
+  const fireRun = () => {
+    if (!runPayloadFor) return;
+    let payload: unknown = null;
+    if (runPayloadText.trim() !== "") {
+      try {
+        payload = JSON.parse(runPayloadText);
+      } catch {
+        setRunPayloadError("Payload must be valid JSON (or empty).");
+        return;
+      }
+    }
+    runNodeMutation.mutate({ nodeId: runPayloadFor, payload });
+  };
 
   useEffect(() => {
     if (existing.data) {
@@ -195,7 +223,18 @@ function WorkflowEditorInner() {
   }, [saveMutation.isPending, name, description, isEnabled, nodes, edges]);
 
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((eds) => addEdge({ ...connection, id: crypto.randomUUID() }, eds)),
+    (connection: Connection) =>
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            id: crypto.randomUUID(),
+            label: connection.sourceHandle ?? undefined,
+            ...(connection.sourceHandle === "error" ? { style: { stroke: "#ef4444" }, animated: true } : {}),
+          },
+          eds,
+        ),
+      ),
     [setEdges],
   );
 
@@ -304,6 +343,7 @@ function WorkflowEditorInner() {
           <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} /> enabled
           </label>
+          {!isNew && <button onClick={() => WorkflowsApi.exportWorkflow(id!, name)}>Export</button>}
           {isDirty && <span className="muted" title="Unsaved changes -- closing or reloading this tab will prompt you first">● unsaved</span>}
           <button className="primary" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
             Save
@@ -386,6 +426,37 @@ function WorkflowEditorInner() {
         <div style={{ marginTop: 16 }}>
           <WorkflowRunHistory workflowId={id!} />
           <WorkflowRevisions workflowId={id!} />
+        </div>
+      )}
+
+      {runPayloadFor && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+          onClick={() => setRunPayloadFor(null)}
+        >
+          <div className="card" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="page-header">
+              <h3 style={{ margin: 0, fontSize: 14 }}>Run trigger</h3>
+              <button className="close-btn" onClick={() => setRunPayloadFor(null)}>×</button>
+            </div>
+            <div className="field">
+              <label>Trigger payload (JSON, optional)</label>
+              <textarea
+                className="mono"
+                rows={6}
+                placeholder='{"example": true}'
+                value={runPayloadText}
+                onChange={(e) => setRunPayloadText(e.target.value)}
+              />
+            </div>
+            {runPayloadError && <p style={{ color: "var(--danger)", fontSize: 12 }}>{runPayloadError}</p>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="primary" disabled={runNodeMutation.isPending} onClick={fireRun}>
+                ▶ Run
+              </button>
+              <button onClick={() => setRunPayloadFor(null)}>Cancel</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -47,6 +47,20 @@ public class ScrapingProject
     /// rules disallow for our user-agent.</summary>
     public bool RespectRobotsTxt { get; set; }
 
+    /// <summary>Optional sitemap.xml URL; the engine loads it and appends its URLs (capped at
+    /// MaxPages) as additional seeds.</summary>
+    public string? SitemapUrl { get; set; }
+
+    /// <summary>SHA-256 hash of the public share token. Null means sharing is off. The raw token
+    /// is shown once at enable time, like an API key.</summary>
+    public string? ShareTokenHash { get; set; }
+
+    /// <summary>Politeness delay between successive page fetches within one run (0 = none).</summary>
+    public int CrawlDelayMs { get; set; }
+
+    /// <summary>Overrides the default WeaverScraper User-Agent for this project's requests.</summary>
+    public string? UserAgent { get; set; }
+
     /// <summary>How many days to keep completed scrape runs and their items before a background job
     /// purges them. Null means keep forever.</summary>
     public int? DataRetentionDays { get; set; }
@@ -87,4 +101,8 @@ public class FieldSelector
 
     public bool Required { get; set; }
     public int Order { get; set; }
+
+    /// <summary>Ordered post-extraction transforms (JSON array, e.g.
+    /// [{"kind":"trim"},{"kind":"regexExtract","pattern":"\\d+"}]). Empty array = raw value.</summary>
+    public string TransformsJson { get; set; } = "[]";
 }

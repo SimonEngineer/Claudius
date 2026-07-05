@@ -23,12 +23,16 @@ public class AuditLogController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<PagedResult<AuditLogEntryDto>>> List(
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, [FromQuery] string? resourceType = null, CancellationToken ct = default)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 200);
 
         var query = _db.AuditLogEntries.Where(e => e.OwnerUserId == UserId);
+        if (!string.IsNullOrWhiteSpace(resourceType))
+        {
+            query = query.Where(e => e.ResourceType == resourceType);
+        }
         var totalCount = await query.CountAsync(ct);
         var entries = await query.OrderByDescending(e => e.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);

@@ -6,9 +6,10 @@ using Weaver.Infrastructure.Persistence;
 
 namespace Weaver.Api.Controllers;
 
-public record RateLimitPolicyDto(Guid Id, string Name, RateLimitKeyScope KeyScope, string? CustomKeyTemplate, int PermitLimit, int WindowSeconds, int BurstCapacity)
+public record RateLimitPolicyDto(Guid Id, string Name, RateLimitKeyScope KeyScope, string? CustomKeyTemplate, int PermitLimit, int WindowSeconds, int BurstCapacity, int UsedByProjects = 0)
 {
-    public static RateLimitPolicyDto FromEntity(RateLimitPolicy p) => new(p.Id, p.Name, p.KeyScope, p.CustomKeyTemplate, p.PermitLimit, p.WindowSeconds, p.BurstCapacity);
+    public static RateLimitPolicyDto FromEntity(RateLimitPolicy p, int usedByProjects = 0) =>
+        new(p.Id, p.Name, p.KeyScope, p.CustomKeyTemplate, p.PermitLimit, p.WindowSeconds, p.BurstCapacity, usedByProjects);
 }
 
 public record UpsertRateLimitPolicyRequest(string Name, RateLimitKeyScope KeyScope, string? CustomKeyTemplate, int PermitLimit, int WindowSeconds, int BurstCapacity);
@@ -32,7 +33,12 @@ public class RateLimitPoliciesController : ControllerBase
     public async Task<ActionResult<List<RateLimitPolicyDto>>> List(CancellationToken ct)
     {
         var policies = await _db.RateLimitPolicies.Where(p => p.OwnerUserId == UserId).OrderBy(p => p.Name).ToListAsync(ct);
-        return policies.Select(RateLimitPolicyDto.FromEntity).ToList();
+        var usage = await _db.ScrapingProjects
+            .Where(p => p.OwnerUserId == UserId && p.RateLimitPolicyId != null)
+            .GroupBy(p => p.RateLimitPolicyId!.Value)
+            .Select(g => new { PolicyId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PolicyId, x => x.Count, ct);
+        return policies.Select(p => RateLimitPolicyDto.FromEntity(p, usage.GetValueOrDefault(p.Id))).ToList();
     }
 
     [HttpPost]

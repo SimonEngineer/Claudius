@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { RateLimitPoliciesApi, ScrapingProjectsApi } from "../api/endpoints";
+import { apiBaseUrl } from "../api/client";
 import PagePicker, { type PickedElement } from "../components/PagePicker";
 import StatusPill from "../components/StatusPill";
 import ItemHistoryModal from "../components/ItemHistoryModal";
@@ -11,6 +12,8 @@ import { emptyProxyConfig, type FieldAttribute, type FieldSelector, type Paginat
 import { formatDuration } from "../utils/duration";
 import { onRunStatusChanged } from "../realtime/runStatusConnection";
 import { usePageTitle } from "../utils/usePageTitle";
+import { useToast } from "../components/Toasts";
+import type { FieldTransform } from "../types";
 
 const emptyForm: UpsertScrapingProjectRequest = {
   name: "",
@@ -28,6 +31,9 @@ const emptyForm: UpsertScrapingProjectRequest = {
   scheduleCron: null,
   startUrls: [],
   respectRobotsTxt: false,
+  sitemapUrl: null,
+  crawlDelayMs: 0,
+  userAgent: null,
   dataRetentionDays: null,
   rateLimitPolicyId: null,
   isEnabled: true,
@@ -76,9 +82,10 @@ export default function ScrapingProjectEditor() {
   }, [isNew, id, queryClient]);
   const [itemsPage, setItemsPage] = useState(1);
   const [itemsPageSize, setItemsPageSize] = useState(20);
+  const [runFilter, setRunFilter] = useState("");
   const items = useQuery({
-    queryKey: ["scraping-project-items", id, itemsPage, itemsPageSize],
-    queryFn: () => ScrapingProjectsApi.items(id!, itemsPage, itemsPageSize),
+    queryKey: ["scraping-project-items", id, itemsPage, itemsPageSize, runFilter],
+    queryFn: () => ScrapingProjectsApi.items(id!, itemsPage, itemsPageSize, runFilter || undefined),
     enabled: !isNew,
   });
   const [itemSearchInput, setItemSearchInput] = useState("");
@@ -93,13 +100,40 @@ export default function ScrapingProjectEditor() {
     queryFn: () => ScrapingProjectsApi.searchItems(id!, itemSearchTerm, itemsPage, itemsPageSize),
     enabled: !isNew && itemSearchTerm.length > 0,
   });
-  const displayedItems = itemSearchTerm ? itemSearch.data : items.data;
+  const rawDisplayedItems = itemSearchTerm ? itemSearch.data : items.data;
+  const [itemSortCol, setItemSortCol] = useState<string | null>(null);
+  const [itemSortAsc, setItemSortAsc] = useState(true);
+  const displayedItems = useMemo(() => {
+    if (!rawDisplayedItems || !itemSortCol) return rawDisplayedItems;
+    const sorted = [...rawDisplayedItems.items].sort((a, b) => {
+      const av = a.data[itemSortCol] ?? "";
+      const bv = b.data[itemSortCol] ?? "";
+      const an = Number(av);
+      const bn = Number(bv);
+      const cmp = !Number.isNaN(an) && !Number.isNaN(bn) && av !== "" && bv !== "" ? an - bn : String(av).localeCompare(String(bv));
+      return itemSortAsc ? cmp : -cmp;
+    });
+    return { ...rawDisplayedItems, items: sorted };
+  }, [rawDisplayedItems, itemSortCol, itemSortAsc]);
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportError, setExportError] = useState<string | null>(null);
   const [historyItemKey, setHistoryItemKey] = useState<string | null>(null);
 
   const [form, setForm] = useState<UpsertScrapingProjectRequest>(emptyForm);
   usePageTitle(isNew ? "New Project" : form.name || "Project");
+  const toast = useToast();
+  const savedSnapshotRef = useRef<string>(JSON.stringify(emptyForm));
+  const isDirty = JSON.stringify(form) !== savedSnapshotRef.current;
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
   const [previewUrl, setPreviewUrl] = useState("");
   const [pickTarget, setPickTarget] = useState<PickTarget>(null);
   const [headerRows, setHeaderRows] = useState<{ key: string; value: string }[]>([]);
@@ -108,6 +142,7 @@ export default function ScrapingProjectEditor() {
     if (existing.data) {
       const { id: _omit, createdAt: _c, updatedAt: _u, lastRunStatus: _lrs, lastRunAt: _lra, ...rest } = existing.data;
       setForm(rest);
+      savedSnapshotRef.current = JSON.stringify(rest);
       setPreviewUrl(rest.startUrl);
       setHeaderRows(Object.entries(rest.customHeaders).map(([key, value]) => ({ key, value })));
     }
@@ -124,9 +159,15 @@ export default function ScrapingProjectEditor() {
   const saveMutation = useMutation({
     mutationFn: () => (isNew ? ScrapingProjectsApi.create(form) : ScrapingProjectsApi.update(id!, form)),
     onSuccess: (saved) => {
+      savedSnapshotRef.current = JSON.stringify(form);
+      toast("success", "Project saved");
       queryClient.invalidateQueries({ queryKey: ["scraping-projects"] });
       if (isNew) navigate(`/scraping-projects/${saved.id}`);
       else queryClient.invalidateQueries({ queryKey: ["scraping-project", id] });
+    },
+    onError: (e) => {
+      const message = (e as { response?: { data?: string } }).response?.data;
+      toast("error", typeof message === "string" && message ? message : "Save failed");
     },
   });
 
@@ -156,6 +197,30 @@ export default function ScrapingProjectEditor() {
       setDetailItem(null);
       queryClient.invalidateQueries({ queryKey: ["scraping-project-items", id] });
       queryClient.invalidateQueries({ queryKey: ["scraping-project-items-search", id] });
+    },
+  });
+
+  const storageStats = useQuery({
+    queryKey: ["scraping-project-storage", id],
+    queryFn: () => ScrapingProjectsApi.storageStats(id!),
+    enabled: !isNew,
+  });
+
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const enableShareMutation = useMutation({
+    mutationFn: () => ScrapingProjectsApi.enableShare(id!),
+    onSuccess: (result) => {
+      setShareToken(result.token);
+      toast("success", "Share link enabled");
+      queryClient.invalidateQueries({ queryKey: ["scraping-project", id] });
+    },
+  });
+  const disableShareMutation = useMutation({
+    mutationFn: () => ScrapingProjectsApi.disableShare(id!),
+    onSuccess: () => {
+      setShareToken(null);
+      toast("success", "Share link disabled");
+      queryClient.invalidateQueries({ queryKey: ["scraping-project", id] });
     },
   });
 
@@ -207,6 +272,17 @@ export default function ScrapingProjectEditor() {
       fields: form.fields.map((f, i) => (i === index ? { ...f, ...patch } : f)),
     });
   };
+
+  const duplicateField = (index: number) => {
+    setForm((f) => {
+      const source = f.fields[index];
+      const copy = { ...source, id: null, name: `${source.name} copy`, order: f.fields.length, transforms: source.transforms?.map((t) => ({ ...t })) };
+      return { ...f, fields: [...f.fields, copy] };
+    });
+  };
+
+  const [transformsOpenFor, setTransformsOpenFor] = useState<number | null>(null);
+  const updateTransforms = (index: number, transforms: FieldTransform[]) => updateField(index, { transforms });
 
   const removeField = (index: number) => {
     setForm({ ...form, fields: form.fields.filter((_, i) => i !== index) });
@@ -263,6 +339,7 @@ export default function ScrapingProjectEditor() {
               Run now
             </button>
           )}
+          {isDirty && <span className="muted" title="Unsaved changes" style={{ alignSelf: "center" }}>● unsaved</span>}
           <button
             className="primary"
             disabled={saveMutation.isPending || (!isNew && (existing.isLoading || existing.isError))}
@@ -467,6 +544,37 @@ export default function ScrapingProjectEditor() {
                 </p>
               </div>
             </div>
+            <div className="row">
+              <div className="field">
+                <label>Sitemap URL (optional — its URLs become extra seeds)</label>
+                <input
+                  className="mono"
+                  placeholder="https://example.com/sitemap.xml"
+                  value={form.sitemapUrl ?? ""}
+                  onChange={(e) => setForm({ ...form, sitemapUrl: e.target.value === "" ? null : e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Crawl delay (ms between pages)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={60000}
+                  value={form.crawlDelayMs || ""}
+                  placeholder="0"
+                  onChange={(e) => setForm({ ...form, crawlDelayMs: Number(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="field">
+                <label>User-Agent override (optional)</label>
+                <input
+                  className="mono"
+                  placeholder="WeaverScraper/1.0"
+                  value={form.userAgent ?? ""}
+                  onChange={(e) => setForm({ ...form, userAgent: e.target.value === "" ? null : e.target.value })}
+                />
+              </div>
+            </div>
             <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input
                 type="checkbox"
@@ -476,6 +584,53 @@ export default function ScrapingProjectEditor() {
               <span className="muted">Respect robots.txt (skip URLs the site disallows for scrapers)</span>
             </label>
           </div>
+
+          {!isNew && (
+            <div className="card">
+              <div className="page-header">
+                <h3 style={{ margin: 0, fontSize: 14 }}>Sharing & storage</h3>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button disabled={enableShareMutation.isPending} onClick={() => enableShareMutation.mutate()}>
+                    {existing.data?.shareEnabled || shareToken ? "Rotate share link" : "Enable share link"}
+                  </button>
+                  {(existing.data?.shareEnabled || shareToken) && (
+                    <button
+                      className="danger"
+                      disabled={disableShareMutation.isPending}
+                      onClick={() => {
+                        if (confirm("Disable the public share link? Anyone using it loses access immediately.")) disableShareMutation.mutate();
+                      }}
+                    >
+                      Disable
+                    </button>
+                  )}
+                </div>
+              </div>
+              {shareToken ? (
+                <div className="card" style={{ background: "var(--panel-2)", margin: "0 0 8px" }}>
+                  <p style={{ marginTop: 0 }}>Read-only link created — copy it now, it won't be shown again:</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="mono" readOnly value={`${apiBaseUrl}/api/public/items/${shareToken}`} />
+                    <button onClick={() => navigator.clipboard.writeText(`${apiBaseUrl}/api/public/items/${shareToken}`)}>Copy</button>
+                  </div>
+                </div>
+              ) : existing.data?.shareEnabled ? (
+                <p className="muted" style={{ marginTop: 0 }}>A public read-only link is active (rotate to get a fresh URL).</p>
+              ) : (
+                <p className="muted" style={{ marginTop: 0 }}>No public link — items are only visible to you.</p>
+              )}
+              {storageStats.data && (
+                <p className="muted" style={{ marginBottom: 0, fontSize: 12 }}>
+                  Storage: {storageStats.data.runCount} run(s), {storageStats.data.itemCount} item(s)
+                  {" · "}≈{(storageStats.data.approxBytes / 1024).toFixed(1)} KB of item data
+                  {storageStats.data.oldestItem && (
+                    <> · oldest {new Date(storageStats.data.oldestItem).toLocaleDateString()}, newest{" "}
+                    {storageStats.data.newestItem ? new Date(storageStats.data.newestItem).toLocaleDateString() : "-"}</>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="card">
             <div className="page-header">
@@ -688,6 +843,16 @@ export default function ScrapingProjectEditor() {
                       />
                     </td>
                     <td style={{ display: "flex", gap: 4 }}>
+                      <button
+                        className={transformsOpenFor === i || (field.transforms?.length ?? 0) > 0 ? "primary" : ""}
+                        title="Value transforms (trim, regex extract, parse number…)"
+                        onClick={() => setTransformsOpenFor(transformsOpenFor === i ? null : i)}
+                      >
+                        fx{(field.transforms?.length ?? 0) > 0 ? ` ${field.transforms!.length}` : ""}
+                      </button>
+                      <button onClick={() => duplicateField(i)} title="Duplicate field">
+                        ⧉
+                      </button>
                       <button disabled={i === 0} onClick={() => moveField(i, -1)} title="Move up">
                         ↑
                       </button>
@@ -702,6 +867,71 @@ export default function ScrapingProjectEditor() {
                 ))}
               </tbody>
             </table>
+            {transformsOpenFor !== null && form.fields[transformsOpenFor] && (
+              <div className="card" style={{ background: "var(--panel-2)", marginTop: 8 }}>
+                <div className="page-header" style={{ marginBottom: 6 }}>
+                  <strong style={{ fontSize: 12 }}>
+                    Transforms for "{form.fields[transformsOpenFor].name || "field"}" (applied in order after extraction)
+                  </strong>
+                  <button
+                    onClick={() =>
+                      updateTransforms(transformsOpenFor, [
+                        ...(form.fields[transformsOpenFor].transforms ?? []),
+                        { kind: "trim" },
+                      ])
+                    }
+                  >
+                    + Add step
+                  </button>
+                </div>
+                {(form.fields[transformsOpenFor].transforms ?? []).length === 0 && (
+                  <p className="muted" style={{ margin: 0 }}>No transforms -- the raw extracted value is stored.</p>
+                )}
+                {(form.fields[transformsOpenFor].transforms ?? []).map((t, ti) => (
+                  <div key={ti} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                    <span className="muted" style={{ fontSize: 12 }}>{ti + 1}.</span>
+                    <select
+                      value={t.kind}
+                      onChange={(e) => {
+                        const transforms = [...(form.fields[transformsOpenFor].transforms ?? [])];
+                        transforms[ti] = { ...transforms[ti], kind: e.target.value as FieldTransform["kind"] };
+                        updateTransforms(transformsOpenFor, transforms);
+                      }}
+                    >
+                      <option value="trim">Trim whitespace</option>
+                      <option value="lowercase">Lowercase</option>
+                      <option value="uppercase">Uppercase</option>
+                      <option value="stripHtml">Strip HTML tags</option>
+                      <option value="regexExtract">Regex extract</option>
+                      <option value="parseNumber">Parse number</option>
+                    </select>
+                    {t.kind === "regexExtract" && (
+                      <input
+                        className="mono"
+                        placeholder={"pattern, e.g. \\d+ or #(\\d+)"}
+                        value={t.pattern ?? ""}
+                        onChange={(e) => {
+                          const transforms = [...(form.fields[transformsOpenFor].transforms ?? [])];
+                          transforms[ti] = { ...transforms[ti], pattern: e.target.value };
+                          updateTransforms(transformsOpenFor, transforms);
+                        }}
+                      />
+                    )}
+                    <button
+                      className="danger"
+                      onClick={() =>
+                        updateTransforms(
+                          transformsOpenFor,
+                          (form.fields[transformsOpenFor].transforms ?? []).filter((_, xi) => xi !== ti),
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {form.fields.length === 0 && <p className="muted">No fields yet -- add one, then click "Pick" and click the element on the page.</p>}
 
             {testExtractMutation.data && (
@@ -815,6 +1045,21 @@ export default function ScrapingProjectEditor() {
                 </h3>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <select
+                    value={runFilter}
+                    title="Only show items from one run"
+                    onChange={(e) => {
+                      setRunFilter(e.target.value);
+                      setItemsPage(1);
+                    }}
+                  >
+                    <option value="">All runs</option>
+                    {runs.data?.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {new Date(r.createdAt).toLocaleString()} ({r.itemsFound} items)
+                      </option>
+                    ))}
+                  </select>
+                  <select
                     value={itemsPageSize}
                     title="Items per page"
                     onChange={(e) => {
@@ -832,7 +1077,7 @@ export default function ScrapingProjectEditor() {
                   </select>
                   <button
                     onClick={() =>
-                      ScrapingProjectsApi.exportItems(id!, exportFormat).catch(() =>
+                      ScrapingProjectsApi.exportItems(id!, exportFormat, runFilter || undefined).catch(() =>
                         setExportError("Export failed. Please try again."),
                       )
                     }
@@ -853,7 +1098,21 @@ export default function ScrapingProjectEditor() {
                   <thead>
                     <tr>
                       {itemColumns.map((c) => (
-                        <th key={c}>{c}</th>
+                        <th
+                          key={c}
+                          style={{ cursor: "pointer", userSelect: "none" }}
+                          title="Sort this page by this column"
+                          onClick={() => {
+                            if (itemSortCol === c) setItemSortAsc((a) => !a);
+                            else {
+                              setItemSortCol(c);
+                              setItemSortAsc(true);
+                            }
+                          }}
+                        >
+                          {c}
+                          {itemSortCol === c ? (itemSortAsc ? " ↑" : " ↓") : ""}
+                        </th>
                       ))}
                       <th></th>
                     </tr>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ScrapedItem } from "../types";
+import { useEscapeKey } from "../utils/useEscapeKey";
 
 /** Full view of one scraped item: field table, raw JSON with copy, and a delete action. */
 export default function ItemDetailModal({
@@ -11,6 +12,7 @@ export default function ItemDetailModal({
   onDelete: () => void;
   onClose: () => void;
 }) {
+  useEscapeKey(onClose);
   const [copied, setCopied] = useState(false);
   const rawJson = JSON.stringify(item.data, null, 2);
 

@@ -16,7 +16,9 @@ function getConnection(): signalR.HubConnection {
   if (connection) return connection;
 
   connection = new signalR.HubConnectionBuilder()
-    .withUrl(`${apiBaseUrl}/hubs/run-status`, { accessTokenFactory: () => getStoredToken() ?? "" })
+    // withCredentials false: auth rides on the access token, not cookies, and a credentialed
+    // negotiate fails CORS preflight when the frontend runs on a different origin than the API.
+    .withUrl(`${apiBaseUrl}/hubs/run-status`, { accessTokenFactory: () => getStoredToken() ?? "", withCredentials: false })
     .withAutomaticReconnect()
     .configureLogging(signalR.LogLevel.Warning)
     .build();

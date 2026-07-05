@@ -26,7 +26,10 @@ public class PlaywrightPageFetcher : IPageFetcher, IAsyncDisposable
     {
         var browser = await GetBrowserAsync();
 
-        var contextOptions = new BrowserNewContextOptions { UserAgent = UserAgent };
+        // A custom User-Agent must be set on the browser context, not as an extra header --
+        // Playwright doesn't reliably let extra headers override the context's UA.
+        var customUserAgent = customHeaders?.FirstOrDefault(h => h.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)).Value;
+        var contextOptions = new BrowserNewContextOptions { UserAgent = string.IsNullOrWhiteSpace(customUserAgent) ? UserAgent : customUserAgent };
         if (proxy is { Enabled: true })
         {
             contextOptions.Proxy = new Microsoft.Playwright.Proxy
@@ -69,7 +72,8 @@ public class PlaywrightPageFetcher : IPageFetcher, IAsyncDisposable
         }
 
         var plainHeaders = customHeaders
-            .Where(h => !string.Equals(h.Key, "Cookie", StringComparison.OrdinalIgnoreCase))
+            .Where(h => !string.Equals(h.Key, "Cookie", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(h.Key, "User-Agent", StringComparison.OrdinalIgnoreCase))
             .ToDictionary(h => h.Key, h => h.Value);
         if (plainHeaders.Count > 0)
         {

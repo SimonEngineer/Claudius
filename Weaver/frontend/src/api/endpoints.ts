@@ -6,9 +6,14 @@ import type {
   CreatedApiKey,
   Credential,
   CronPreview,
+  AccountOverview,
   DashboardStats,
   NotificationSettings,
+  ProjectTemplate,
   ProxyConfig,
+  RunsPerDay,
+  StorageStats,
+  WorkerInfo,
   WorkflowRevision,
   FieldSelector,
   ItemSnapshot,
@@ -56,6 +61,15 @@ export const ScrapingProjectsApi = {
   clearRuns: (id: string) => apiClient.delete(`/api/scraping-projects/${id}/runs`),
   cancelRun: (id: string, runId: string) => apiClient.post(`/api/scraping-projects/${id}/runs/${runId}/cancel`),
   deleteItem: (id: string, itemId: string) => apiClient.delete(`/api/scraping-projects/${id}/items/${itemId}`),
+  toggleEnabled: (id: string) => apiClient.post<{ isEnabled: boolean }>(`/api/scraping-projects/${id}/toggle-enabled`).then((r) => r.data),
+  storageStats: (id: string) => apiClient.get<StorageStats>(`/api/scraping-projects/${id}/storage-stats`).then((r) => r.data),
+  enableShare: (id: string) => apiClient.post<{ token: string; path: string }>(`/api/scraping-projects/${id}/share`).then((r) => r.data),
+  disableShare: (id: string) => apiClient.delete(`/api/scraping-projects/${id}/share`),
+  exportProject: (id: string, name: string) => downloadFromApi(`/api/scraping-projects/${id}/export`, {}, `${name}.weaver-project.json`),
+  importProject: (fileContents: string) =>
+    apiClient.post<ScrapingProject>("/api/scraping-projects/import", JSON.parse(fileContents)).then((r) => r.data),
+  templates: () => apiClient.get<ProjectTemplate[]>("/api/scraping-projects/templates").then((r) => r.data),
+  createFromTemplate: (key: string) => apiClient.post<ScrapingProject>(`/api/scraping-projects/templates/${key}`).then((r) => r.data),
   items: (id: string, page = 1, pageSize = 50, runId?: string) =>
     apiClient
       .get<PagedResult<ScrapedItem>>(`/api/scraping-projects/${id}/items`, {
@@ -98,13 +112,22 @@ export const ApiKeysApi = {
 };
 
 export const AuditLogApi = {
-  list: (page = 1, pageSize = 50) =>
-    apiClient.get<PagedResult<AuditLogEntry>>("/api/audit-log", { params: { page, pageSize } }).then((r) => r.data),
+  list: (page = 1, pageSize = 50, resourceType?: string) =>
+    apiClient
+      .get<PagedResult<AuditLogEntry>>("/api/audit-log", { params: { page, pageSize, ...(resourceType ? { resourceType } : {}) } })
+      .then((r) => r.data),
   exportCsv: () => downloadFromApi("/api/audit-log/export", {}, "activity.csv"),
 };
 
 export const DashboardApi = {
   stats: () => apiClient.get<DashboardStats>("/api/dashboard/stats").then((r) => r.data),
+  runsPerDay: () => apiClient.get<RunsPerDay>("/api/dashboard/runs-per-day").then((r) => r.data),
+  workers: () => apiClient.get<WorkerInfo[]>("/api/dashboard/workers").then((r) => r.data),
+};
+
+export const MetaApi = {
+  version: () => apiClient.get<{ version: string }>("/api/version").then((r) => r.data),
+  accountOverview: () => apiClient.get<AccountOverview>("/api/account/overview").then((r) => r.data),
 };
 
 export const CredentialsApi = {
@@ -150,6 +173,9 @@ export const WorkflowsApi = {
   runDetail: (runId: string) =>
     apiClient.get<WorkflowRunDetail>(`/api/workflows/runs/${runId}`).then((r) => r.data),
   cancelRun: (runId: string) => apiClient.post(`/api/workflows/runs/${runId}/cancel`),
+  replayRun: (runId: string) => apiClient.post<{ runId: string }>(`/api/workflows/runs/${runId}/replay`).then((r) => r.data),
+  toggleEnabled: (id: string) => apiClient.post<{ isEnabled: boolean }>(`/api/workflows/${id}/toggle-enabled`).then((r) => r.data),
+  clearRuns: (id: string) => apiClient.delete(`/api/workflows/${id}/runs`),
   revisions: (id: string) => apiClient.get<WorkflowRevision[]>(`/api/workflows/${id}/revisions`).then((r) => r.data),
   restoreRevision: (id: string, revisionId: string) =>
     apiClient.post<Workflow>(`/api/workflows/${id}/revisions/${revisionId}/restore`).then((r) => r.data),
